@@ -233,4 +233,12 @@ python scripts/run_generalization_eval.py --env-config configs/env_controlled_co
 
 Current evidence-density result: balanced remains the best mock gate. In test it built 10 learned roads with 8 positive payoffs and road net `4.00`; loose built 21 roads with only 8 positive payoffs and road net `2.05`. Medium/strict still produced no strong evidence, so the next step is a positive/negative context split rather than immediately scaling real LLM calls.
 
+Positive/negative context split:
+
+```bash
+python scripts/run_generalization_eval.py --env-config configs/env_controlled_corridor_curriculum.yaml --train-seeds 0:20 --test-seeds 1000:1020 --episodes-per-seed 2 --train-episodes-per-seed 4 --test-episodes-per-seed 1 --max-steps 200 --groups route_only llm_no_road_learning llm_with_road_learning_loose_threshold llm_with_road_learning_balanced_threshold --test-context-scenarios positive negative mixed --mock-deepseek --quiet-llm-calls --max-learned-builds-per-episode 3 --test-exploration-budget 0 --out outputs/runs/controlled_corridor_context_split_20x4_train_20x1_test
+```
+
+Current context-split result: balanced separates useful and misleading contexts under learned-only test. On positive maps it built 18 learned roads with 15 positive payoffs and road net `8.30`; on mixed maps it built 11 learned roads with 8 positive payoffs and road net `5.10`; on negative maps it built only 1 learned road. Loose built 21 learned roads in every context and went negative on negative maps.
+
 For a real DeepSeek pilot, replace `--mock-deepseek` with `--require-api` after setting `DEEPSEEK_API_KEY`.

@@ -154,6 +154,50 @@ class GeneralizationEvalTest(unittest.TestCase):
         self.assertEqual(len([row for row in rows if row["phase"] == "train"]), 2)
         self.assertEqual(len([row for row in rows if row["phase"] == "test"]), 1)
 
+    def test_generalization_eval_supports_test_context_scenarios(self):
+        out_dir = Path("outputs") / f"test_generalization_eval_context_split_{uuid4().hex}"
+        command = [
+            sys.executable,
+            "scripts/run_generalization_eval.py",
+            "--env-config",
+            "configs/env_controlled_corridor_curriculum.yaml",
+            "--train-seeds",
+            "0:1",
+            "--test-seeds",
+            "1000:1001",
+            "--episodes-per-seed",
+            "1",
+            "--max-steps",
+            "30",
+            "--groups",
+            "route_only",
+            "--test-context-scenarios",
+            "positive",
+            "negative",
+            "mixed",
+            "--out",
+            str(out_dir),
+        ]
+
+        completed = subprocess.run(command, check=False, capture_output=True, text=True)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["config"]["test_context_scenarios"], ["positive", "negative", "mixed"])
+        self.assertTrue((out_dir / "context_comparison.csv").exists())
+        with (out_dir / "metrics.csv").open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        test_rows = [row for row in rows if row["phase"] == "test"]
+        self.assertEqual({row["context_scenario"] for row in test_rows}, {"positive", "negative", "mixed"})
+        self.assertIn("on_route_build_count", rows[0])
+        self.assertIn("off_route_build_count", rows[0])
+        with (out_dir / "context_comparison.csv").open(encoding="utf-8", newline="") as handle:
+            context_rows = list(csv.DictReader(handle))
+        self.assertEqual(
+            {row["context_scenario"] for row in context_rows if row["phase"] == "test"},
+            {"positive", "negative", "mixed"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

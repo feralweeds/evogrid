@@ -286,3 +286,40 @@ Interpretation:
 - Medium and strict still produce no strong evidence after doubling train episodes from 2 to 4 per seed. The bottleneck is therefore not just sample count; the current medium/strict gates are too hard for the present context aggregation and train/test map variation.
 
 Next useful step: split test maps into positive on-route, off-route negative, and mixed contexts to verify whether balanced is skipping the right roads, not merely building fewer roads.
+
+## Positive/Negative Context Split Result
+
+The generalization runner supports test-only context splits:
+
+```text
+--test-context-scenarios positive negative mixed
+```
+
+Training still uses the normal controlled curriculum mixture. Test is repeated once per forced context, with exploration disabled:
+
+```bash
+python scripts/run_generalization_eval.py --env-config configs/env_controlled_corridor_curriculum.yaml --train-seeds 0:20 --test-seeds 1000:1020 --episodes-per-seed 2 --train-episodes-per-seed 4 --test-episodes-per-seed 1 --max-steps 200 --groups route_only llm_no_road_learning llm_with_road_learning_loose_threshold llm_with_road_learning_balanced_threshold --test-context-scenarios positive negative mixed --mock-deepseek --quiet-llm-calls --max-learned-builds-per-episode 3 --test-exploration-budget 0 --out outputs/runs/controlled_corridor_context_split_20x4_train_20x1_test
+```
+
+The run writes `context_comparison.csv` in addition to the aggregate comparison files.
+
+Test totals:
+
+```text
+context   profile    roads   learned   explore   strong   weak   on   off   pos   neg   road_net   pos_ratio   avg_payoff
+positive  loose      21      21        0         742      231    21   0     7     14    2.61       0.333       0.124
+positive  balanced   18      18        0         39       858    18   0     15    3     8.30       0.833       0.461
+mixed     loose      21      21        0         746      213    21   0     8     13    2.70       0.381       0.129
+mixed     balanced   11      11        0         43       932    11   0     8     3     5.10       0.727       0.464
+negative  loose      21      21        0         754      235    21   0     6     15   -0.38       0.286      -0.018
+negative  balanced   1       1         0         1        1089   1    0     1     0     0.75       1.000       0.750
+```
+
+Interpretation:
+
+- The split validates the main learning claim better than aggregate reward. In learned-only test, balanced builds on positive and mixed maps but almost completely suppresses learned road building on negative maps.
+- Loose is over-permissive: it builds 21 roads in every context, including negative maps, where total road payoff becomes negative.
+- Balanced is not merely "building less"; it preserves most positive-road hits while dropping many negative-road builds.
+- Off-route builds are zero because the learned evidence gate requires an on-route opportunity. The remaining negative payoffs are on-route roads that did not get enough reuse, not random off-route paving.
+
+Current conclusion: `llm_with_road_learning_balanced_threshold` is the first profile that clearly separates useful transport-road contexts from mostly misleading rough contexts under learned-only test.

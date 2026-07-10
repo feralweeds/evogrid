@@ -75,6 +75,13 @@ def main() -> None:
     parser.add_argument("--episodes-per-seed", type=int, default=2)
     parser.add_argument("--train-episodes-per-seed", type=int)
     parser.add_argument("--test-episodes-per-seed", type=int)
+    parser.add_argument(
+        "--test-context-scenarios",
+        nargs="+",
+        choices=["default", "positive", "negative", "mixed"],
+        default=["default"],
+        help="Run the test phase once per controlled-corridor scenario while keeping training unchanged.",
+    )
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--out", default="outputs/runs/generalization_eval")
     parser.add_argument("--groups", nargs="+", default=GROUPS)
@@ -151,6 +158,7 @@ def main() -> None:
             "episodes_per_seed": args.episodes_per_seed,
             "train_episodes_per_seed": train_episodes_per_seed,
             "test_episodes_per_seed": test_episodes_per_seed,
+            "test_context_scenarios": args.test_context_scenarios,
             "max_steps": args.max_steps,
             "groups": args.groups,
             "random_road_probability": args.random_road_probability,
@@ -178,6 +186,7 @@ def main() -> None:
             "metrics_csv": str(out_dir / "metrics.csv"),
             "summary_json": str(out_dir / "summary.json"),
             "group_comparison_csv": str(out_dir / "group_comparison.csv"),
+            "context_comparison_csv": str(out_dir / "context_comparison.csv"),
             "episodes_dir": str(episodes_dir),
             "traces_dir": str(traces_dir),
         },
@@ -191,6 +200,7 @@ def main() -> None:
             test_seeds=test_seeds,
             train_episodes_per_seed=train_episodes_per_seed,
             test_episodes_per_seed=test_episodes_per_seed,
+            test_context_scenarios=args.test_context_scenarios,
             epsilon_values=epsilon_values,
             epsilon_phase_length=args.epsilon_phase_length,
             random_road_probability=args.random_road_probability,
@@ -219,11 +229,14 @@ def main() -> None:
         }
 
     comparison_rows = _group_comparison_rows(summary["groups"])
+    context_rows = _context_comparison_rows(all_rows)
     _write_csv(out_dir / "metrics.csv", all_rows)
     _write_csv(out_dir / "group_comparison.csv", comparison_rows)
+    _write_csv(out_dir / "context_comparison.csv", context_rows)
     _write_json(out_dir / "summary.json", summary)
     print(f"Wrote {out_dir / 'metrics.csv'}")
     print(f"Wrote {out_dir / 'group_comparison.csv'}")
+    print(f"Wrote {out_dir / 'context_comparison.csv'}")
     print(f"Wrote {out_dir / 'summary.json'}")
 
 
@@ -234,6 +247,7 @@ def _run_group(
     test_seeds: list[int],
     train_episodes_per_seed: int,
     test_episodes_per_seed: int,
+    test_context_scenarios: list[str],
     epsilon_values: list[float],
     epsilon_phase_length: int,
     random_road_probability: float,
@@ -287,43 +301,46 @@ def _run_group(
             log_llm_calls=log_llm_calls,
             episodes_dir=episodes_dir,
             traces_dir=traces_dir,
+            context_scenario="train",
         )
     )
     frozen_train_experience = _experience_only_memory(learned_records.road_credit_records)
-    rows.extend(
-        _run_phase(
-            phase="test",
-            group=group,
-            config=config,
-            seeds=test_seeds,
-            episodes_per_seed=test_episodes_per_seed,
-            base_experience=frozen_train_experience,
-            update_global_experience=False,
-            epsilon_values=epsilon_values,
-            epsilon_phase_length=epsilon_phase_length,
-            random_road_probability=random_road_probability,
-            uncertainty_epsilon=uncertainty_epsilon,
-            uncertainty_confidence_threshold=uncertainty_confidence_threshold,
-            max_exploratory_builds_per_episode=(
-                test_exploration_budget
-                if test_exploration_budget is not None
-                else max_exploratory_builds_per_episode
-            ),
-            max_learned_builds_per_episode=max_learned_builds_per_episode,
-            learned_value_threshold=learned_value_threshold,
-            confidence_threshold=confidence_threshold,
-            min_contextual_evidence_count=min_contextual_evidence_count,
-            positive_rate_threshold=positive_rate_threshold,
-            require_contextual_evidence=require_contextual_evidence,
-            require_on_route_learned_build=require_on_route_learned_build,
-            run_config=run_config,
-            client=client,
-            trace_prompts=trace_prompts,
-            log_llm_calls=log_llm_calls,
-            episodes_dir=episodes_dir,
-            traces_dir=traces_dir,
+    for context_scenario in test_context_scenarios:
+        rows.extend(
+            _run_phase(
+                phase="test",
+                group=group,
+                config=_config_for_test_context(config, context_scenario),
+                seeds=test_seeds,
+                episodes_per_seed=test_episodes_per_seed,
+                base_experience=frozen_train_experience,
+                update_global_experience=False,
+                epsilon_values=epsilon_values,
+                epsilon_phase_length=epsilon_phase_length,
+                random_road_probability=random_road_probability,
+                uncertainty_epsilon=uncertainty_epsilon,
+                uncertainty_confidence_threshold=uncertainty_confidence_threshold,
+                max_exploratory_builds_per_episode=(
+                    test_exploration_budget
+                    if test_exploration_budget is not None
+                    else max_exploratory_builds_per_episode
+                ),
+                max_learned_builds_per_episode=max_learned_builds_per_episode,
+                learned_value_threshold=learned_value_threshold,
+                confidence_threshold=confidence_threshold,
+                min_contextual_evidence_count=min_contextual_evidence_count,
+                positive_rate_threshold=positive_rate_threshold,
+                require_contextual_evidence=require_contextual_evidence,
+                require_on_route_learned_build=require_on_route_learned_build,
+                run_config=run_config,
+                client=client,
+                trace_prompts=trace_prompts,
+                log_llm_calls=log_llm_calls,
+                episodes_dir=episodes_dir,
+                traces_dir=traces_dir,
+                context_scenario=context_scenario,
+            )
         )
-    )
     return rows
 
 
@@ -354,6 +371,7 @@ def _run_phase(
     log_llm_calls: bool,
     episodes_dir: Path,
     traces_dir: Path,
+    context_scenario: str,
 ) -> list[dict]:
     rows: list[dict] = []
     global_episode = 0
@@ -395,23 +413,26 @@ def _run_phase(
                 episode_in_seed=episode_in_seed,
                 global_episode=global_episode,
                 epsilon=epsilon,
+                context_scenario=context_scenario,
             )
             rows.append(row)
             if update_global_experience:
                 base_experience.add_road_credit_records(result["metrics"].get("road_credit_records", []))
+            output_phase = _output_phase_name(phase, context_scenario)
             _write_json(
-                episodes_dir / phase / group / f"seed_{map_seed}_episode_{episode_in_seed:03d}.json",
+                episodes_dir / output_phase / group / f"seed_{map_seed}_episode_{episode_in_seed:03d}.json",
                 result,
             )
             _write_json(
-                traces_dir / phase / group / f"seed_{map_seed}_episode_{episode_in_seed:03d}_trace.json",
+                traces_dir / output_phase / group / f"seed_{map_seed}_episode_{episode_in_seed:03d}_trace.json",
                 {"trace": result["trace"]},
             )
             print(
-                "phase={phase} group={group} seed={seed} episode={episode} eps={epsilon:.2f} "
+                "phase={phase} context={context} group={group} seed={seed} episode={episode} eps={epsilon:.2f} "
                 "reward={reward:.2f} ore={ore} roads={roads} llm_calls={llm_calls} "
                 "llm_builds={llm_builds} road_net={road_net:.3f}".format(
                     phase=phase,
+                    context=context_scenario,
                     group=group,
                     seed=map_seed,
                     episode=episode_in_seed,
@@ -614,6 +635,22 @@ def _config_for_group(base_config: dict, group: str) -> dict:
     return config
 
 
+def _config_for_test_context(config: dict, context_scenario: str) -> dict:
+    if context_scenario == "default":
+        return copy.deepcopy(config)
+    forced = copy.deepcopy(config)
+    corridor = forced.setdefault("env", {}).setdefault("random_map", {}).setdefault("controlled_corridor", {})
+    for scenario in ("positive", "mixed", "negative"):
+        corridor[f"{scenario}_weight"] = 1.0 if scenario == context_scenario else 0.0
+    return forced
+
+
+def _output_phase_name(phase: str, context_scenario: str) -> str:
+    if phase != "test" or context_scenario == "default":
+        return phase
+    return f"{phase}_{context_scenario}"
+
+
 def _run_episode(env: EvoGridMineEnv, agent, map_seed: int, agent_seed: int) -> dict:
     obs, info = env.reset(seed=map_seed)
     agent.reset(agent_seed)
@@ -667,6 +704,7 @@ def _row_from_result(
     episode_in_seed: int,
     global_episode: int,
     epsilon: float,
+    context_scenario: str,
 ) -> dict:
     metrics = result["metrics"]
     trace = result["trace"]
@@ -677,6 +715,7 @@ def _row_from_result(
         "episode_in_seed": episode_in_seed,
         "global_episode": global_episode,
         "epsilon": epsilon,
+        "context_scenario": context_scenario,
     }
     for key, value in metrics.items():
         if key in {"map_summary", "road_credit_records"}:
@@ -700,12 +739,15 @@ def _road_quality_metrics(metrics: dict, trace: list[dict]) -> dict:
         if _trace_action(item) == "BUILD_ROAD"
         and item.get("shaping_opportunity", {}).get("route_context", {}).get("on_current_route")
     )
+    off_route_build_count = max(0, road_count - route_build_count)
     road_net = float(metrics.get("road_net_payoff", 0.0) or 0.0)
     return {
         "positive_road_ratio": positive_count / road_count if road_count else 0.0,
         "avg_payoff_per_road": road_net / road_count if road_count else 0.0,
         "rough_road_ratio": rough_count / road_count if road_count else 0.0,
         "route_road_ratio": route_build_count / road_count if road_count else 0.0,
+        "on_route_build_count": route_build_count,
+        "off_route_build_count": off_route_build_count,
     }
 
 
@@ -879,7 +921,7 @@ def _summarize_rows(rows: list[dict]) -> dict:
     numeric_keys = sorted(
         key
         for key, value in rows[0].items()
-        if key not in {"phase", "group"} and isinstance(value, (int, float, bool))
+        if key not in {"phase", "group", "context_scenario"} and isinstance(value, (int, float, bool))
     )
     for key in numeric_keys:
         values = [float(row.get(key, 0.0) or 0.0) for row in rows]
@@ -926,6 +968,54 @@ def _group_comparison_rows(group_summary: dict) -> list[dict]:
         )
         rows.append(row)
     return rows
+
+
+def _context_comparison_rows(rows: list[dict]) -> list[dict]:
+    grouped: dict[tuple[str, str, str], list[dict]] = {}
+    for row in rows:
+        key = (
+            str(row.get("phase", "")),
+            str(row.get("context_scenario", "default")),
+            str(row.get("group", "")),
+        )
+        grouped.setdefault(key, []).append(row)
+
+    comparison = []
+    for (phase, context_scenario, group), group_rows in sorted(grouped.items()):
+        road_count = _sum_metric(group_rows, "num_build_road")
+        positive_count = _sum_metric(group_rows, "positive_road_payoff_count")
+        negative_count = _sum_metric(group_rows, "negative_road_payoff_count")
+        row = {
+            "phase": phase,
+            "context_scenario": context_scenario,
+            "group": group,
+            "episode_count": len(group_rows),
+            "episode_reward_mean": _mean_metric(group_rows, "episode_reward"),
+            "ore_delivered_mean": _mean_metric(group_rows, "ore_delivered"),
+            "road_net_payoff_sum": _sum_metric(group_rows, "road_net_payoff"),
+            "road_net_payoff_mean": _mean_metric(group_rows, "road_net_payoff"),
+            "num_build_road_sum": road_count,
+            "llm_exploration_build_count_sum": _sum_metric(group_rows, "llm_exploration_build_count"),
+            "llm_learned_build_count_sum": _sum_metric(group_rows, "llm_learned_build_count"),
+            "strong_learned_evidence_count_sum": _sum_metric(group_rows, "strong_learned_evidence_count"),
+            "weak_learned_evidence_count_sum": _sum_metric(group_rows, "weak_learned_evidence_count"),
+            "on_route_build_count_sum": _sum_metric(group_rows, "on_route_build_count"),
+            "off_route_build_count_sum": _sum_metric(group_rows, "off_route_build_count"),
+            "positive_road_payoff_count_sum": positive_count,
+            "negative_road_payoff_count_sum": negative_count,
+            "total_positive_road_ratio": _ratio(int(positive_count), int(road_count)),
+            "avg_payoff_per_road": _sum_metric(group_rows, "road_net_payoff") / road_count if road_count else 0.0,
+        }
+        comparison.append(row)
+    return comparison
+
+
+def _sum_metric(rows: list[dict], key: str) -> float:
+    return sum(float(row.get(key, 0.0) or 0.0) for row in rows)
+
+
+def _mean_metric(rows: list[dict], key: str) -> float:
+    return _sum_metric(rows, key) / len(rows) if rows else 0.0
 
 
 def _experience_only_memory(records: list[dict]) -> AgentMemory:
