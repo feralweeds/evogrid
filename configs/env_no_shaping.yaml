@@ -1,0 +1,24 @@
+env:
+  grid_size: [32, 32]
+  max_steps: 500
+  base_pos: [2, 2]
+  ore_positions:
+    - [26, 26]
+  enable_rough_terrain: true
+  enable_obstacles: true
+  shaping:
+    allow_dig: false
+    allow_build_road: false
+    reset_after_dropoff: false
+  rewards:
+    dropoff: 10.0
+    move_ground: -0.01
+    move_rough: -0.05
+    move_road: 0.0
+    dig: -0.2
+    build_road: -0.1
+    mine: -0.01
+    dropoff_action: -0.01
+    noop: -0.01
+    invalid_action: -0.05
+

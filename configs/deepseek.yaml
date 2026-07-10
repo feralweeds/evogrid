@@ -1,0 +1,12 @@
+deepseek:
+  base_url: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY
+  model: deepseek-chat
+  timeout: 30
+  max_tokens: 512
+  json_mode: true
+  temperature: 0.2
+  mode: planner
+  replan_interval: 20
+  max_retries: 2
+  fallback_agent: greedy

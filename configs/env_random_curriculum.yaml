@@ -1,0 +1,31 @@
+env:
+  map_mode: random_curriculum
+  grid_size: [16, 16]
+  max_steps: 400
+  base_pos: [2, 2]
+  random_map:
+    ore_count: 1
+    min_base_ore_distance: 10
+    obstacle_density: 0.12
+    rough_density: 0.25
+    rough_corridor_bias: 0.4
+    ensure_reachable: true
+    max_generation_attempts: 100
+  observation:
+    mode: partial_obs
+    local_view_radius: 4
+  shaping:
+    allow_dig: true
+    allow_build_road: true
+    reset_after_dropoff: false
+  rewards:
+    dropoff: 10.0
+    move_ground: -0.01
+    move_rough: -0.05
+    move_road: 0.0
+    dig: -0.2
+    build_road: -0.1
+    mine: -0.01
+    dropoff_action: -0.01
+    noop: -0.01
+    invalid_action: -0.05
