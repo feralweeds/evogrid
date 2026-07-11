@@ -198,6 +198,46 @@ class GeneralizationEvalTest(unittest.TestCase):
             {"positive", "negative", "mixed"},
         )
 
+    def test_generalization_eval_supports_road_learning_train_policy_override(self):
+        out_dir = Path("outputs") / f"test_generalization_eval_train_policy_{uuid4().hex}"
+        command = [
+            sys.executable,
+            "scripts/run_generalization_eval.py",
+            "--env-config",
+            "configs/env_controlled_corridor_curriculum.yaml",
+            "--train-seeds",
+            "0:1",
+            "--test-seeds",
+            "1000:1001",
+            "--episodes-per-seed",
+            "1",
+            "--max-steps",
+            "30",
+            "--groups",
+            "llm_with_road_learning_balanced_threshold",
+            "--road-learning-train-policy-group",
+            "llm_no_road_learning",
+            "--mock-deepseek",
+            "--quiet-llm-calls",
+            "--test-exploration-budget",
+            "0",
+            "--out",
+            str(out_dir),
+        ]
+
+        completed = subprocess.run(command, check=False, capture_output=True, text=True)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["config"]["road_learning_train_policy_group"], "llm_no_road_learning")
+        with (out_dir / "metrics.csv").open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        train_rows = [row for row in rows if row["phase"] == "train"]
+        test_rows = [row for row in rows if row["phase"] == "test"]
+        self.assertEqual({row["group"] for row in rows}, {"llm_with_road_learning_balanced_threshold"})
+        self.assertEqual({row["acting_group"] for row in train_rows}, {"llm_no_road_learning"})
+        self.assertEqual({row["acting_group"] for row in test_rows}, {"llm_with_road_learning_balanced_threshold"})
+
 
 if __name__ == "__main__":
     unittest.main()

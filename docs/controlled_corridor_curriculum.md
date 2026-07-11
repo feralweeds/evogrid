@@ -323,3 +323,54 @@ Interpretation:
 - Off-route builds are zero because the learned evidence gate requires an on-route opportunity. The remaining negative payoffs are on-route roads that did not get enough reuse, not random off-route paving.
 
 Current conclusion: `llm_with_road_learning_balanced_threshold` is the first profile that clearly separates useful transport-road contexts from mostly misleading rough contexts under learned-only test.
+
+## Train-Policy Override For Evidence Generation
+
+The real DeepSeek pilot showed a different failure mode from mock: the run completed and API preflight passed, but `llm_with_road_learning_balanced_threshold` generated too few exploratory road records during training. Test exploration was correctly disabled, but there was no strong learned evidence in test:
+
+```text
+test llm_exploration_build_count = 0
+test llm_learned_build_count = 0
+test strong_learned_evidence_count = 0
+test weak_learned_evidence_count > 0
+```
+
+This means the LLM was not rejecting strong learned evidence. The evidence gate never produced strong learned evidence, so the LLM was not called for learned road decisions in test.
+
+Use:
+
+```text
+--road-learning-train-policy-group llm_no_road_learning
+```
+
+for evidence-generation pilots. For `llm_with_road_learning*` groups only, train then uses the specified policy to collect road records while test still uses the requested learned policy. The metrics include `acting_group` so the train actor and test actor are visible.
+
+Mock smoke:
+
+```bash
+python scripts/run_generalization_eval.py --env-config configs/env_controlled_corridor_curriculum.yaml --train-seeds 0:3 --test-seeds 1000:1003 --episodes-per-seed 1 --train-episodes-per-seed 2 --test-episodes-per-seed 1 --max-steps 120 --groups llm_with_road_learning_balanced_threshold --road-learning-train-policy-group llm_no_road_learning --test-context-scenarios positive negative mixed --mock-deepseek --quiet-llm-calls --max-learned-builds-per-episode 3 --test-exploration-budget 0 --out outputs/runs/controlled_corridor_train_policy_override_smoke
+```
+
+Smoke result:
+
+```text
+train actor=llm_no_road_learning: roads=12, llm_explore=12, road_net=0.85
+positive test actor=balanced: roads=3, llm_learned=3, llm_explore=0, strong=8
+mixed test actor=balanced: roads=2, llm_learned=2, llm_explore=0, strong=2
+negative test actor=balanced: roads=0, llm_learned=0, llm_explore=0, strong=0
+```
+
+Recommended next real DeepSeek pilot:
+
+```bash
+python scripts/run_generalization_eval.py --env-config configs/env_controlled_corridor_curriculum.yaml --train-seeds 0:10 --test-seeds 1000:1010 --episodes-per-seed 1 --train-episodes-per-seed 4 --test-episodes-per-seed 1 --max-steps 220 --groups route_only llm_no_road_learning llm_with_road_learning_balanced_threshold --road-learning-train-policy-group llm_no_road_learning --test-context-scenarios positive negative mixed --quiet-llm-calls --max-learned-builds-per-episode 3 --test-exploration-budget 0 --require-api --out outputs/runs/deepseek_train_policy_override_context_split_pilot
+```
+
+Expected first-pass success criteria:
+
+```text
+test llm_exploration_build_count = 0
+positive/mixed llm_learned_build_count > 0
+negative llm_learned_build_count near 0
+positive/mixed road_net_payoff > 0
+```

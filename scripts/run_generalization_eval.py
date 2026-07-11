@@ -92,6 +92,13 @@ def main() -> None:
     parser.add_argument("--uncertainty-confidence-threshold", type=float, default=0.20)
     parser.add_argument("--max-exploratory-builds-per-episode", type=int, default=3)
     parser.add_argument("--test-exploration-budget", type=int)
+    parser.add_argument(
+        "--road-learning-train-policy-group",
+        help=(
+            "Use this policy only during train for llm_with_road_learning* groups, "
+            "then test with the requested road-learning group."
+        ),
+    )
     parser.add_argument("--max-learned-builds-per-episode", type=int, default=9)
     parser.add_argument("--learned-value-threshold", type=float, default=0.0)
     parser.add_argument("--confidence-threshold", type=float, default=0.0)
@@ -129,7 +136,10 @@ def main() -> None:
         else int(args.episodes_per_seed)
     )
     epsilon_values = _parse_schedule(args.epsilon_schedule)
-    use_llm = any(_group_uses_llm(group) for group in args.groups)
+    use_llm = any(_group_uses_llm(group) for group in args.groups) or (
+        bool(args.road_learning_train_policy_group)
+        and _group_uses_llm(args.road_learning_train_policy_group)
+    )
     deepseek_config = load_yaml(args.deepseek_config).get("deepseek", {}) if use_llm else {}
     run_config = _build_run_config(args, deepseek_config)
     client = _build_client(run_config) if use_llm and not args.mock_deepseek else None
@@ -168,6 +178,7 @@ def main() -> None:
             "uncertainty_confidence_threshold": args.uncertainty_confidence_threshold,
             "max_exploratory_builds_per_episode": args.max_exploratory_builds_per_episode,
             "test_exploration_budget": args.test_exploration_budget,
+            "road_learning_train_policy_group": args.road_learning_train_policy_group,
             "max_learned_builds_per_episode": args.max_learned_builds_per_episode,
             "learned_value_threshold": args.learned_value_threshold,
             "confidence_threshold": args.confidence_threshold,
@@ -208,6 +219,7 @@ def main() -> None:
             uncertainty_confidence_threshold=args.uncertainty_confidence_threshold,
             max_exploratory_builds_per_episode=args.max_exploratory_builds_per_episode,
             test_exploration_budget=args.test_exploration_budget,
+            road_learning_train_policy_group=args.road_learning_train_policy_group,
             max_learned_builds_per_episode=args.max_learned_builds_per_episode,
             learned_value_threshold=args.learned_value_threshold,
             confidence_threshold=args.confidence_threshold,
@@ -255,6 +267,7 @@ def _run_group(
     uncertainty_confidence_threshold: float,
     max_exploratory_builds_per_episode: int | None,
     test_exploration_budget: int | None,
+    road_learning_train_policy_group: str | None,
     max_learned_builds_per_episode: int | None,
     learned_value_threshold: float,
     confidence_threshold: float,
@@ -270,6 +283,7 @@ def _run_group(
     traces_dir: Path,
 ) -> list[dict]:
     config = _config_for_group(base_config, group)
+    train_group = _train_policy_group(group, road_learning_train_policy_group)
     learned_records = AgentMemory()
     rows: list[dict] = []
 
@@ -277,6 +291,7 @@ def _run_group(
         _run_phase(
             phase="train",
             group=group,
+            acting_group=train_group,
             config=config,
             seeds=train_seeds,
             episodes_per_seed=train_episodes_per_seed,
@@ -310,6 +325,7 @@ def _run_group(
             _run_phase(
                 phase="test",
                 group=group,
+                acting_group=group,
                 config=_config_for_test_context(config, context_scenario),
                 seeds=test_seeds,
                 episodes_per_seed=test_episodes_per_seed,
@@ -347,6 +363,7 @@ def _run_group(
 def _run_phase(
     phase: str,
     group: str,
+    acting_group: str,
     config: dict,
     seeds: list[int],
     episodes_per_seed: int,
@@ -382,7 +399,7 @@ def _run_phase(
             env = EvoGridMineEnv(copy.deepcopy(config))
             agent_seed = map_seed * 1000 + episode_in_seed
             agent = _agent_for_group(
-                group=group,
+                group=acting_group,
                 memory=map_memory,
                 seed=agent_seed,
                 epsilon=epsilon,
@@ -409,6 +426,7 @@ def _run_phase(
                 result=result,
                 phase=phase,
                 group=group,
+                acting_group=acting_group,
                 map_seed=map_seed,
                 episode_in_seed=episode_in_seed,
                 global_episode=global_episode,
@@ -428,12 +446,13 @@ def _run_phase(
                 {"trace": result["trace"]},
             )
             print(
-                "phase={phase} context={context} group={group} seed={seed} episode={episode} eps={epsilon:.2f} "
+                "phase={phase} context={context} group={group} actor={actor} seed={seed} episode={episode} eps={epsilon:.2f} "
                 "reward={reward:.2f} ore={ore} roads={roads} llm_calls={llm_calls} "
                 "llm_builds={llm_builds} road_net={road_net:.3f}".format(
                     phase=phase,
                     context=context_scenario,
                     group=group,
+                    actor=acting_group,
                     seed=map_seed,
                     episode=episode_in_seed,
                     epsilon=epsilon,
@@ -531,6 +550,12 @@ def _learned_threshold_profile(group: str) -> dict | None:
 
 def _group_uses_llm(group: str) -> bool:
     return _policy_group(group).startswith("llm_")
+
+
+def _train_policy_group(group: str, road_learning_train_policy_group: str | None) -> str:
+    if road_learning_train_policy_group and _policy_group(group) == "llm_with_road_learning":
+        return road_learning_train_policy_group
+    return group
 
 
 def _agent_for_group(
@@ -700,6 +725,7 @@ def _row_from_result(
     result: dict,
     phase: str,
     group: str,
+    acting_group: str,
     map_seed: int,
     episode_in_seed: int,
     global_episode: int,
@@ -711,6 +737,7 @@ def _row_from_result(
     row = {
         "phase": phase,
         "group": group,
+        "acting_group": acting_group,
         "map_seed": map_seed,
         "episode_in_seed": episode_in_seed,
         "global_episode": global_episode,
@@ -921,7 +948,7 @@ def _summarize_rows(rows: list[dict]) -> dict:
     numeric_keys = sorted(
         key
         for key, value in rows[0].items()
-        if key not in {"phase", "group", "context_scenario"} and isinstance(value, (int, float, bool))
+        if key not in {"phase", "group", "acting_group", "context_scenario"} and isinstance(value, (int, float, bool))
     )
     for key in numeric_keys:
         values = [float(row.get(key, 0.0) or 0.0) for row in rows]
@@ -989,6 +1016,7 @@ def _context_comparison_rows(rows: list[dict]) -> list[dict]:
             "phase": phase,
             "context_scenario": context_scenario,
             "group": group,
+            "acting_group": ",".join(sorted({str(item.get("acting_group", group)) for item in group_rows})),
             "episode_count": len(group_rows),
             "episode_reward_mean": _mean_metric(group_rows, "episode_reward"),
             "ore_delivered_mean": _mean_metric(group_rows, "ore_delivered"),
