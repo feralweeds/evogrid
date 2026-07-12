@@ -231,6 +231,8 @@ class EvoGridMineEnv:
         assert self.state is not None
         metrics = collect_metrics(self.state).to_dict()
         metrics.update(self._map_diagnostics())
+        metrics["max_steps"] = self.max_steps
+        metrics["steps_remaining"] = max(0, self.max_steps - self.state.step_count)
         map_summary = {
             "agent_pos": list(self.state.agent_pos),
             "base_pos": list(self.state.base_pos),

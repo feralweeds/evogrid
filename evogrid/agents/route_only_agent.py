@@ -153,6 +153,8 @@ class LearnedRoadAgent(RouteOnlyAgent):
         positive_rate_threshold: float = 0.0,
         require_contextual_evidence: bool = False,
         require_on_route_learned_build: bool = False,
+        require_future_use_break_even: bool = False,
+        future_use_margin: int = 0,
     ):
         super().__init__(memory=memory, route_planner=route_planner)
         self.shaping_opportunity_builder = shaping_opportunity_builder or ShapingOpportunityBuilder()
@@ -162,6 +164,8 @@ class LearnedRoadAgent(RouteOnlyAgent):
         self.positive_rate_threshold = float(positive_rate_threshold)
         self.require_contextual_evidence = bool(require_contextual_evidence)
         self.require_on_route_learned_build = bool(require_on_route_learned_build)
+        self.require_future_use_break_even = bool(require_future_use_break_even)
+        self.future_use_margin = int(future_use_margin)
 
     def act(self, obs: dict, info: dict) -> int:
         self.memory.update_from_observation(obs)
@@ -193,6 +197,8 @@ class LearnedRoadAgent(RouteOnlyAgent):
             positive_rate_threshold=self.positive_rate_threshold,
             require_contextual_evidence=self.require_contextual_evidence,
             require_on_route=self.require_on_route_learned_build,
+            require_future_use_break_even=self.require_future_use_break_even,
+            future_use_margin=self.future_use_margin,
         )
 
     def _record_learned_trace(
@@ -243,6 +249,8 @@ class ExplorationRoadAgent(LearnedRoadAgent):
         positive_rate_threshold: float = 0.0,
         require_contextual_evidence: bool = False,
         require_on_route_learned_build: bool = False,
+        require_future_use_break_even: bool = False,
+        future_use_margin: int = 0,
     ):
         super().__init__(
             memory=memory,
@@ -254,6 +262,8 @@ class ExplorationRoadAgent(LearnedRoadAgent):
             positive_rate_threshold=positive_rate_threshold,
             require_contextual_evidence=require_contextual_evidence,
             require_on_route_learned_build=require_on_route_learned_build,
+            require_future_use_break_even=require_future_use_break_even,
+            future_use_margin=future_use_margin,
         )
         self.epsilon = float(epsilon)
         self.uncertainty_epsilon = float(uncertainty_epsilon)

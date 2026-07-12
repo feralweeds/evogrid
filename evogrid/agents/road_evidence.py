@@ -14,6 +14,8 @@ def learned_road_evidence_gate(
     positive_rate_threshold: float = 0.0,
     require_contextual_evidence: bool = False,
     require_on_route: bool = False,
+    require_future_use_break_even: bool = False,
+    future_use_margin: int = 0,
 ) -> dict:
     estimate = opportunity.get("learned_estimate", {}) or {}
     source = estimate.get("source")
@@ -22,6 +24,9 @@ def learned_road_evidence_gate(
     positive_rate = float(estimate.get("positive_rate", 0.0) or 0.0)
     confidence = float(estimate.get("confidence", 0.0) or 0.0)
     route_context = opportunity.get("route_context", {}) or {}
+    cost = opportunity.get("cost", {}) or {}
+    break_even_uses = cost.get("break_even_uses")
+    estimated_future_uses = cost.get("estimated_future_uses")
 
     reasons = []
     allowed_sources = CONTEXTUAL_LEARNED_SOURCES if require_contextual_evidence else ACTIONABLE_LEARNED_SOURCES
@@ -37,6 +42,11 @@ def learned_road_evidence_gate(
         reasons.append("confidence_below_threshold")
     if require_on_route and not bool(route_context.get("on_current_route")):
         reasons.append("not_on_current_route")
+    if require_future_use_break_even:
+        if break_even_uses is None or estimated_future_uses is None:
+            reasons.append("future_use_estimate_unavailable")
+        elif int(estimated_future_uses) < int(break_even_uses) + int(future_use_margin):
+            reasons.append("estimated_future_uses_below_break_even")
 
     return {
         "passes": not reasons,
@@ -46,6 +56,13 @@ def learned_road_evidence_gate(
         "positive_rate": positive_rate,
         "learned_value": learned_value,
         "confidence": confidence,
+        "break_even_uses": break_even_uses,
+        "estimated_future_uses": estimated_future_uses,
+        "future_use_surplus": (
+            int(estimated_future_uses) - int(break_even_uses)
+            if break_even_uses is not None and estimated_future_uses is not None
+            else None
+        ),
         "thresholds": {
             "min_contextual_evidence_count": int(min_contextual_evidence_count),
             "positive_rate_threshold": float(positive_rate_threshold),
@@ -53,5 +70,7 @@ def learned_road_evidence_gate(
             "confidence_threshold": float(confidence_threshold),
             "require_contextual_evidence": bool(require_contextual_evidence),
             "require_on_route": bool(require_on_route),
+            "require_future_use_break_even": bool(require_future_use_break_even),
+            "future_use_margin": int(future_use_margin),
         },
     }

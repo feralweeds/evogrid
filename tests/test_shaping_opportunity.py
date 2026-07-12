@@ -36,6 +36,8 @@ class ShapingOpportunityTest(unittest.TestCase):
         self.assertEqual(opportunity["candidate_action"], "BUILD_ROAD")
         self.assertNotIn("action", opportunity)
         self.assertEqual(opportunity["cost"]["break_even_uses"], 2)
+        self.assertIn("estimated_future_uses", opportunity["cost"])
+        self.assertIn("future_use_surplus", opportunity["cost"])
         self.assertFalse(opportunity["constraints"]["auto_execute"])
         self.assertFalse(opportunity["constraints"]["uses_hidden_map"])
         self.assertFalse(opportunity["constraints"]["uses_future_truth"])

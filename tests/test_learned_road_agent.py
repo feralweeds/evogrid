@@ -136,6 +136,59 @@ class ExplorationRoadAgentTest(unittest.TestCase):
         self.assertEqual(agent.trace[-1]["build_decision_source"], "learned")
         self.assertTrue(agent.trace[-1]["learned_evidence_strong"])
 
+    def test_future_use_gate_blocks_late_low_reuse_learned_build(self):
+        memory = AgentMemory()
+        memory.add_road_credit_records(
+            [_context_record(net_payoff=0.5, build_step=step) for step in range(3)]
+        )
+        agent = ExplorationRoadAgent(
+            memory=memory,
+            epsilon=0.0,
+            uncertainty_epsilon=0.0,
+            min_contextual_evidence_count=3,
+            positive_rate_threshold=0.7,
+            learned_value_threshold=0.2,
+            confidence_threshold=0.5,
+            require_contextual_evidence=True,
+            require_on_route_learned_build=True,
+            require_future_use_break_even=True,
+            future_use_margin=1,
+        )
+        action = agent.act(_transport_obs(Tile.ROUGH), {"steps_remaining": 0})
+
+        self.assertEqual(action, int(Action.MOVE_LEFT))
+        self.assertEqual(agent.trace[-1]["build_decision_source"], "route")
+        gate = agent.trace[-1]["learned_evidence_gate"]
+        self.assertFalse(gate["passes"])
+        self.assertIn("estimated_future_uses_below_break_even", gate["failed_reasons"])
+
+    def test_future_use_gate_allows_early_high_reuse_learned_build(self):
+        memory = AgentMemory()
+        memory.visited_counts[(1, 1)] = 4
+        memory.add_road_credit_records(
+            [_context_record(net_payoff=0.5, build_step=step) for step in range(3)]
+        )
+        agent = ExplorationRoadAgent(
+            memory=memory,
+            epsilon=0.0,
+            uncertainty_epsilon=0.0,
+            min_contextual_evidence_count=3,
+            positive_rate_threshold=0.7,
+            learned_value_threshold=0.2,
+            confidence_threshold=0.5,
+            require_contextual_evidence=True,
+            require_on_route_learned_build=True,
+            require_future_use_break_even=True,
+            future_use_margin=1,
+        )
+        action = agent.act(_transport_obs(Tile.ROUGH), {"steps_remaining": 10})
+
+        self.assertEqual(action, int(Action.BUILD_ROAD))
+        self.assertEqual(agent.trace[-1]["build_decision_source"], "learned")
+        gate = agent.trace[-1]["learned_evidence_gate"]
+        self.assertTrue(gate["passes"])
+        self.assertGreaterEqual(gate["estimated_future_uses"], gate["break_even_uses"] + 1)
+
     def test_learned_build_cap_blocks_positive_estimate(self):
         memory = AgentMemory()
         memory.add_road_credit_records(

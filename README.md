@@ -28,6 +28,8 @@ In this setting, the agent does not receive global ore positions or the full map
 
 Do not hard-code road-building or digging rules as the answer. Generic capabilities such as action legality checks, local observation construction, memory updates, and reflection summaries are allowed.
 
+The controlled road-learning curriculum, learned-only tests, context splits, and future-use break-even gate are documented in `docs/controlled_corridor_curriculum.md`.
+
 ## Quick Start
 
 ```bash

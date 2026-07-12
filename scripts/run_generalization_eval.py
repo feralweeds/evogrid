@@ -30,6 +30,8 @@ LEARNED_THRESHOLD_PROFILES = {
         "confidence_threshold": 0.0,
         "require_contextual_evidence": False,
         "require_on_route_learned_build": False,
+        "require_future_use_break_even": False,
+        "future_use_margin": 0,
     },
     "loose_threshold": {
         "min_contextual_evidence_count": 2,
@@ -38,6 +40,8 @@ LEARNED_THRESHOLD_PROFILES = {
         "confidence_threshold": 0.2,
         "require_contextual_evidence": True,
         "require_on_route_learned_build": True,
+        "require_future_use_break_even": False,
+        "future_use_margin": 0,
     },
     "balanced_threshold": {
         "min_contextual_evidence_count": 2,
@@ -46,6 +50,18 @@ LEARNED_THRESHOLD_PROFILES = {
         "confidence_threshold": 0.3,
         "require_contextual_evidence": True,
         "require_on_route_learned_build": True,
+        "require_future_use_break_even": False,
+        "future_use_margin": 0,
+    },
+    "balanced_future_use_threshold": {
+        "min_contextual_evidence_count": 2,
+        "positive_rate_threshold": 0.6,
+        "learned_value_threshold": 0.1,
+        "confidence_threshold": 0.3,
+        "require_contextual_evidence": True,
+        "require_on_route_learned_build": True,
+        "require_future_use_break_even": True,
+        "future_use_margin": 1,
     },
     "medium_threshold": {
         "min_contextual_evidence_count": 3,
@@ -54,6 +70,8 @@ LEARNED_THRESHOLD_PROFILES = {
         "confidence_threshold": 0.5,
         "require_contextual_evidence": True,
         "require_on_route_learned_build": True,
+        "require_future_use_break_even": False,
+        "future_use_margin": 0,
     },
     "strict_threshold": {
         "min_contextual_evidence_count": 5,
@@ -62,6 +80,8 @@ LEARNED_THRESHOLD_PROFILES = {
         "confidence_threshold": 0.7,
         "require_contextual_evidence": True,
         "require_on_route_learned_build": True,
+        "require_future_use_break_even": False,
+        "future_use_margin": 0,
     },
 }
 
@@ -106,6 +126,8 @@ def main() -> None:
     parser.add_argument("--positive-rate-threshold", type=float, default=0.0)
     parser.add_argument("--require-contextual-evidence", action="store_true")
     parser.add_argument("--require-on-route-learned-build", action="store_true")
+    parser.add_argument("--require-future-use-break-even", action="store_true")
+    parser.add_argument("--future-use-margin", type=int, default=0)
     parser.add_argument("--mock-deepseek", action="store_true")
     parser.add_argument("--require-api", action="store_true")
     parser.add_argument("--skip-api-check", action="store_true")
@@ -186,6 +208,8 @@ def main() -> None:
             "positive_rate_threshold": args.positive_rate_threshold,
             "require_contextual_evidence": bool(args.require_contextual_evidence),
             "require_on_route_learned_build": bool(args.require_on_route_learned_build),
+            "require_future_use_break_even": bool(args.require_future_use_break_even),
+            "future_use_margin": args.future_use_margin,
             "learned_threshold_profiles": LEARNED_THRESHOLD_PROFILES,
             "mock_deepseek": bool(args.mock_deepseek),
             "deepseek_config": args.deepseek_config if use_llm else None,
@@ -227,6 +251,8 @@ def main() -> None:
             positive_rate_threshold=args.positive_rate_threshold,
             require_contextual_evidence=args.require_contextual_evidence,
             require_on_route_learned_build=args.require_on_route_learned_build,
+            require_future_use_break_even=args.require_future_use_break_even,
+            future_use_margin=args.future_use_margin,
             run_config=run_config,
             client=mock_client or client,
             trace_prompts=args.trace_prompts,
@@ -275,6 +301,8 @@ def _run_group(
     positive_rate_threshold: float,
     require_contextual_evidence: bool,
     require_on_route_learned_build: bool,
+    require_future_use_break_even: bool,
+    future_use_margin: int,
     run_config: dict,
     client,
     trace_prompts: bool,
@@ -310,6 +338,8 @@ def _run_group(
             positive_rate_threshold=positive_rate_threshold,
             require_contextual_evidence=require_contextual_evidence,
             require_on_route_learned_build=require_on_route_learned_build,
+            require_future_use_break_even=require_future_use_break_even,
+            future_use_margin=future_use_margin,
             run_config=run_config,
             client=client,
             trace_prompts=trace_prompts,
@@ -348,6 +378,8 @@ def _run_group(
                 positive_rate_threshold=positive_rate_threshold,
                 require_contextual_evidence=require_contextual_evidence,
                 require_on_route_learned_build=require_on_route_learned_build,
+                require_future_use_break_even=require_future_use_break_even,
+                future_use_margin=future_use_margin,
                 run_config=run_config,
                 client=client,
                 trace_prompts=trace_prompts,
@@ -382,6 +414,8 @@ def _run_phase(
     positive_rate_threshold: float,
     require_contextual_evidence: bool,
     require_on_route_learned_build: bool,
+    require_future_use_break_even: bool,
+    future_use_margin: int,
     run_config: dict,
     client,
     trace_prompts: bool,
@@ -414,6 +448,8 @@ def _run_phase(
                 positive_rate_threshold=positive_rate_threshold,
                 require_contextual_evidence=require_contextual_evidence,
                 require_on_route_learned_build=require_on_route_learned_build,
+                require_future_use_break_even=require_future_use_break_even,
+                future_use_margin=future_use_margin,
                 run_config=run_config,
                 client=client,
                 trace_prompts=trace_prompts,
@@ -574,6 +610,8 @@ def _agent_for_group(
     positive_rate_threshold: float,
     require_contextual_evidence: bool,
     require_on_route_learned_build: bool,
+    require_future_use_break_even: bool,
+    future_use_margin: int,
     run_config: dict,
     client,
     trace_prompts: bool,
@@ -590,6 +628,8 @@ def _agent_for_group(
         positive_rate_threshold = profile["positive_rate_threshold"]
         require_contextual_evidence = profile["require_contextual_evidence"]
         require_on_route_learned_build = profile["require_on_route_learned_build"]
+        require_future_use_break_even = profile["require_future_use_break_even"]
+        future_use_margin = profile["future_use_margin"]
 
     if policy_group == "route_only":
         return RouteOnlyAgent(memory=memory)
@@ -611,6 +651,8 @@ def _agent_for_group(
             positive_rate_threshold=positive_rate_threshold,
             require_contextual_evidence=require_contextual_evidence,
             require_on_route_learned_build=require_on_route_learned_build,
+            require_future_use_break_even=require_future_use_break_even,
+            future_use_margin=future_use_margin,
         )
     if policy_group == "llm_no_road_learning":
         return LLMRoadLearningAgent(
@@ -625,6 +667,8 @@ def _agent_for_group(
             positive_rate_threshold=positive_rate_threshold,
             require_contextual_evidence=require_contextual_evidence,
             require_on_route_learned_build=require_on_route_learned_build,
+            require_future_use_break_even=require_future_use_break_even,
+            future_use_margin=future_use_margin,
             temperature=run_config["temperature"],
             max_retries=run_config["max_retries"],
             trace_prompts=trace_prompts,
@@ -644,6 +688,8 @@ def _agent_for_group(
             positive_rate_threshold=positive_rate_threshold,
             require_contextual_evidence=require_contextual_evidence,
             require_on_route_learned_build=require_on_route_learned_build,
+            require_future_use_break_even=require_future_use_break_even,
+            future_use_margin=future_use_margin,
             temperature=run_config["temperature"],
             max_retries=run_config["max_retries"],
             trace_prompts=trace_prompts,

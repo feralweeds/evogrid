@@ -42,6 +42,8 @@ class LLMRoadLearningAgent(RouteOnlyAgent):
         positive_rate_threshold: float = 0.0,
         require_contextual_evidence: bool = False,
         require_on_route_learned_build: bool = False,
+        require_future_use_break_even: bool = False,
+        future_use_margin: int = 0,
     ):
         super().__init__(memory=memory)
         self.client = client
@@ -62,6 +64,8 @@ class LLMRoadLearningAgent(RouteOnlyAgent):
         self.positive_rate_threshold = float(positive_rate_threshold)
         self.require_contextual_evidence = bool(require_contextual_evidence)
         self.require_on_route_learned_build = bool(require_on_route_learned_build)
+        self.require_future_use_break_even = bool(require_future_use_break_even)
+        self.future_use_margin = int(future_use_margin)
         self._episode_start_record_count = len(self.memory.road_credit_records)
         self._exploration_builds_this_episode = 0
         self._learned_builds_this_episode = 0
@@ -178,6 +182,8 @@ class LLMRoadLearningAgent(RouteOnlyAgent):
             positive_rate_threshold=self.positive_rate_threshold,
             require_contextual_evidence=self.require_contextual_evidence,
             require_on_route=self.require_on_route_learned_build,
+            require_future_use_break_even=self.require_future_use_break_even,
+            future_use_margin=self.future_use_margin,
         )
 
     def _call_llm_for_action(

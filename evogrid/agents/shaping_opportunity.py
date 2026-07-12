@@ -62,6 +62,14 @@ class ShapingOpportunityBuilder:
             "known_as_transport_corridor": _on_route(position, route_plan) or bool(obs.get("has_ore")),
         }
         route_context = _route_context(route_plan, mode)
+        break_even_uses = _break_even_uses(self.economics.build_cost, saving_per_use)
+        estimated_future_uses = _estimated_future_uses(
+            obs=obs,
+            info=info,
+            memory_evidence=memory_evidence,
+            route_context=route_context,
+            break_even_uses=break_even_uses,
+        )
         return {
             "available": True,
             "candidate_action": Action.BUILD_ROAD.name,
@@ -72,7 +80,13 @@ class ShapingOpportunityBuilder:
                 "original_move_cost": original_move_cost,
                 "road_move_cost": self.economics.road_move_cost,
                 "saving_per_use": saving_per_use,
-                "break_even_uses": _break_even_uses(self.economics.build_cost, saving_per_use),
+                "break_even_uses": break_even_uses,
+                "estimated_future_uses": estimated_future_uses,
+                "future_use_surplus": (
+                    estimated_future_uses - break_even_uses
+                    if estimated_future_uses is not None and break_even_uses is not None
+                    else None
+                ),
             },
             "memory_evidence": memory_evidence,
             "route_context": route_context,
@@ -134,6 +148,42 @@ def _break_even_uses(build_cost: float, saving_per_use: float) -> int | None:
     if saving_per_use <= 0.0:
         return None
     return int(ceil(build_cost / saving_per_use))
+
+
+def _estimated_future_uses(
+    obs: dict,
+    info: dict,
+    memory_evidence: dict,
+    route_context: dict,
+    break_even_uses: int | None,
+) -> int | None:
+    if break_even_uses is None:
+        return None
+    observed_visits = int(memory_evidence.get("observed_visit_count", 0) or 0)
+    if not route_context.get("on_current_route"):
+        return observed_visits
+
+    route_remaining_length = route_context.get("route_remaining_length")
+    if route_remaining_length is None:
+        return observed_visits
+    route_moves = max(1, int(route_remaining_length) - 1)
+    steps_remaining = _steps_remaining(obs, info)
+    if steps_remaining is None:
+        return observed_visits
+
+    # Conservative visible-state estimate: future reuse needs both enough
+    # remaining horizon and observed evidence that this tile is actually on a
+    # repeated path in the current episode.
+    estimated_future_rounds = max(0, int(steps_remaining) // max(1, route_moves * 2))
+    return min(observed_visits, estimated_future_rounds)
+
+
+def _steps_remaining(obs: dict, info: dict) -> int | None:
+    if "steps_remaining" in info:
+        return int(info["steps_remaining"])
+    if "max_steps" in info:
+        return max(0, int(info["max_steps"]) - int(obs.get("step", 0) or 0))
+    return None
 
 
 def _on_route(position: Position, route_plan: RoutePlan | None) -> bool:

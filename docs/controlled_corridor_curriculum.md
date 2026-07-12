@@ -374,3 +374,62 @@ positive/mixed llm_learned_build_count > 0
 negative llm_learned_build_count near 0
 positive/mixed road_net_payoff > 0
 ```
+
+## Future-Use Break-Even Gate
+
+The real learned-only context split showed that DeepSeek can use learned road evidence with test exploration disabled, but total reward still lags `route_only` on positive and mixed maps. The remaining issue is not simply whether a road has positive historical payoff. The agent also needs to ask whether the current episode has enough future reuse left to justify spending an action on `BUILD_ROAD`.
+
+Road opportunities now include:
+
+```text
+break_even_uses
+estimated_future_uses
+future_use_surplus
+```
+
+`break_even_uses` is computed from visible road economics. `estimated_future_uses` is conservative and uses only agent-visible state:
+
+- remaining step budget from `steps_remaining`
+- current route length from the observed route planner
+- observed visit count for the current tile
+
+It does not use the hidden full map or future route truth. When `require_future_use_break_even` is enabled, learned road evidence must satisfy:
+
+```text
+estimated_future_uses >= break_even_uses + future_use_margin
+```
+
+The generalization runner adds:
+
+```text
+--require-future-use-break-even
+--future-use-margin
+llm_with_road_learning_balanced_future_use_threshold
+```
+
+Smoke command:
+
+```bash
+python scripts/run_generalization_eval.py --env-config configs/env_controlled_corridor_curriculum.yaml --train-seeds 0:3 --test-seeds 1000:1003 --episodes-per-seed 1 --train-episodes-per-seed 2 --test-episodes-per-seed 1 --max-steps 120 --groups llm_with_road_learning_balanced_threshold llm_with_road_learning_balanced_future_use_threshold --road-learning-train-policy-group llm_no_road_learning --test-context-scenarios positive negative mixed --mock-deepseek --quiet-llm-calls --max-learned-builds-per-episode 3 --test-exploration-budget 0 --out outputs/runs/controlled_corridor_future_use_gate_smoke_v2
+```
+
+Smoke result:
+
+```text
+profile                learned_builds   road_net   avg_payoff   reward
+balanced               0.556            -0.011     -0.0037      8.603
+balanced_future_use    0.333             0.022      0.0139      8.634
+```
+
+Interpretation:
+
+- The future-use gate reduced learned road building instead of increasing it.
+- The small mock smoke moved road net payoff from slightly negative to slightly positive.
+- Reward improved slightly, but the run is intentionally too small to claim a stable reward gain.
+- This is the right next real-LLM ablation because it directly targets the observed failure mode: useful roads that are still not worth building late or with too little expected reuse.
+
+Recommended real DeepSeek ablation:
+
+```bash
+python scripts/run_generalization_eval.py --env-config configs/env_controlled_corridor_curriculum.yaml --train-seeds 0:10 --test-seeds 1000:1010 --episodes-per-seed 1 --train-episodes-per-seed 4 --test-episodes-per-seed 1 --max-steps 220 --groups route_only llm_no_road_learning llm_with_road_learning_balanced_threshold llm_with_road_learning_balanced_future_use_threshold --road-learning-train-policy-group llm_no_road_learning --test-context-scenarios positive negative mixed --quiet-llm-calls --max-learned-builds-per-episode 3 --test-exploration-budget 0 --require-api --out outputs/runs/deepseek_future_use_gate_context_split_pilot
+```
