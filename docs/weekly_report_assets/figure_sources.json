@@ -1,0 +1,12 @@
+{
+  "platform_architecture.png": "根据当前代码结构绘制的平台架构图",
+  "road_learning_pipeline.png": "根据道路学习模块和证据门槛绘制",
+  "controlled_corridor_examples.png": "由 configs/env_controlled_corridor_curriculum.yaml 通过 map_builder 生成",
+  "mock_context_split_positive_ratio.png": "outputs/runs/controlled_corridor_context_split_20x4_train_20x1_test/context_comparison.csv",
+  "mock_context_split_road_net.png": "outputs/runs/controlled_corridor_context_split_20x4_train_20x1_test/context_comparison.csv",
+  "deepseek_pilot_learned_builds.png": "outputs/runs/deepseek_train_policy_override_context_split_pilot/context_comparison.csv",
+  "deepseek_pilot_road_net.png": "outputs/runs/deepseek_train_policy_override_context_split_pilot/context_comparison.csv",
+  "future_use_gate_smoke.png": "outputs/runs/controlled_corridor_future_use_gate_smoke_v2/group_comparison.csv",
+  "latest_deepseek_future_use_learned_builds.png": "outputs/runs/deepseek_future_use_gate_context_split_pilot/context_comparison.csv",
+  "latest_deepseek_future_use_road_net.png": "outputs/runs/deepseek_future_use_gate_context_split_pilot/context_comparison.csv"
+}

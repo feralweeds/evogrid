@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1050" height="560" viewBox="0 0 1050 560">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>
+text { font-family: "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; fill: #1f2937; }
+.title { font-size: 24px; font-weight: 700; }
+.label { font-size: 14px; }
+.small { font-size: 12px; fill: #4b5563; }
+.axis { stroke: #9ca3af; stroke-width: 1; }
+.grid { stroke: #e5e7eb; stroke-width: 1; }
+</style>
+<text x="90" y="45" class="title">CloudCast 最佳成本随轮次变化</text>
+<text x="90" y="70" class="small">曲线向下表示找到更低成本的路由程序。</text>
+<line x1="90" y1="469.7" x2="840" y2="469.7" class="grid"/>
+<text x="80" y="473.7" text-anchor="end" class="small">600</text>
+<line x1="90" y1="381.9" x2="840" y2="381.9" class="grid"/>
+<text x="80" y="385.9" text-anchor="end" class="small">700</text>
+<line x1="90" y1="294.2" x2="840" y2="294.2" class="grid"/>
+<text x="80" y="298.2" text-anchor="end" class="small">800</text>
+<line x1="90" y1="206.5" x2="840" y2="206.5" class="grid"/>
+<text x="80" y="210.5" text-anchor="end" class="small">900</text>
+<line x1="90" y1="118.7" x2="840" y2="118.7" class="grid"/>
+<text x="80" y="122.7" text-anchor="end" class="small">1000</text>
+<line x1="90" y1="88" x2="90" y2="490" class="axis"/>
+<line x1="90" y1="490" x2="840" y2="490" class="axis"/>
+<text x="90.0" y="515" text-anchor="middle" class="small">0</text>
+<text x="215.0" y="515" text-anchor="middle" class="small">5</text>
+<text x="340.0" y="515" text-anchor="middle" class="small">10</text>
+<text x="465.0" y="515" text-anchor="middle" class="small">15</text>
+<text x="590.0" y="515" text-anchor="middle" class="small">20</text>
+<text x="715.0" y="515" text-anchor="middle" class="small">25</text>
+<text x="840.0" y="515" text-anchor="middle" class="small">30</text>
+<text x="465.0" y="542" text-anchor="middle" class="small">训练轮次</text>
+<polyline points="115.0,88.0 140.0,88.0 165.0,88.0 190.0,88.0 215.0,88.0 240.0,88.0 265.0,88.0 290.0,88.0 315.0,88.0 340.0,88.0 365.0,88.0 390.0,88.0 415.0,88.0 440.0,88.0 465.0,416.5 490.0,416.5 515.0,416.5 540.0,416.5 565.0,416.5 590.0,416.5 615.0,416.5 640.0,416.5 665.0,416.5 690.0,416.5 715.0,416.5 740.0,446.0 765.0,446.0 790.0,446.0 815.0,446.0 840.0,446.0" fill="none" stroke="#2563eb" stroke-width="3"/>
+<line x1="865" y1="88" x2="893" y2="88" stroke="#2563eb" stroke-width="3"/>
+<text x="901" y="93" class="small">完整 EoM（早期运行）：627</text>
+<polyline points="115.0,88.0 140.0,88.0 165.0,88.0 190.0,88.0 215.0,88.0 240.0,88.0 265.0,88.0 290.0,88.0 315.0,332.8 340.0,368.1 365.0,368.1 390.0,368.1 415.0,398.6 440.0,398.6 465.0,398.6 490.0,446.0 515.0,446.0 540.0,446.0 565.0,446.0 590.0,446.0 615.0,446.0 640.0,446.0 665.0,446.0 690.0,446.0 715.0,446.0 740.0,446.0 765.0,446.0 790.0,446.0 815.0,446.0 840.0,446.0" fill="none" stroke="#16a34a" stroke-width="3"/>
+<line x1="865" y1="116" x2="893" y2="116" stroke="#16a34a" stroke-width="3"/>
+<text x="901" y="121" class="small">单智能体：627</text>
+<polyline points="115.0,88.0 140.0,88.0 165.0,88.0 190.0,88.5 215.0,88.5 240.0,88.5 265.0,88.5 290.0,88.5 315.0,190.7 340.0,323.9 365.0,323.9 390.0,323.9 415.0,323.9 440.0,323.9 465.0,323.9 490.0,323.9 515.0,323.9 540.0,323.9 565.0,323.9 590.0,332.8 615.0,332.8 640.0,332.8 665.0,332.8 690.0,332.8 715.0,332.8 740.0,332.8 765.0,332.8 790.0,332.8 815.0,359.1 840.0,359.1" fill="none" stroke="#dc2626" stroke-width="3"/>
+<line x1="865" y1="144" x2="893" y2="144" stroke="#dc2626" stroke-width="3"/>
+<text x="901" y="149" class="small">完整 EoM（消融基准）：726</text>
+<polyline points="115.0,122.2 140.0,122.2 165.0,122.2 190.0,446.0 215.0,446.0 240.0,446.0 265.0,446.0 290.0,446.0 315.0,446.0 340.0,446.0 365.0,446.0 390.0,446.0 415.0,446.0 440.0,446.0 465.0,446.0 490.0,446.0 515.0,446.0 540.0,446.0 565.0,446.0 590.0,446.0 615.0,446.0 640.0,446.0 665.0,446.0 690.0,446.0 715.0,446.0 740.0,446.0 765.0,446.0 790.0,446.0 815.0,446.0 840.0,446.0" fill="none" stroke="#7c3aed" stroke-width="3"/>
+<line x1="865" y1="172" x2="893" y2="172" stroke="#7c3aed" stroke-width="3"/>
+<text x="901" y="177" class="small">随机唤醒/弱拍卖：627</text>
+</svg>

@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="640" viewBox="0 0 1120 640">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>
+text { font-family: "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; fill: #1f2937; }
+.title { font-size: 24px; font-weight: 700; }
+.label { font-size: 14px; }
+.small { font-size: 12px; fill: #4b5563; }
+.axis { stroke: #9ca3af; stroke-width: 1; }
+.grid { stroke: #e5e7eb; stroke-width: 1; }
+</style>
+<text x="80" y="45" class="title">原论文 Table 2：机制消融结果</text>
+<text x="80" y="70" class="small">纵轴为准确率；每组左柱为 mean，右柱为 best。MATH 与 Finance 是论文中的两个消融任务。</text>
+<line x1="80" y1="495.0" x2="1080" y2="495.0" class="grid"/>
+<text x="70" y="499.0" text-anchor="end" class="small">0%</text>
+<line x1="80" y1="437.4" x2="1080" y2="437.4" class="grid"/>
+<text x="70" y="441.4" text-anchor="end" class="small">10%</text>
+<line x1="80" y1="379.9" x2="1080" y2="379.9" class="grid"/>
+<text x="70" y="383.9" text-anchor="end" class="small">20%</text>
+<line x1="80" y1="322.3" x2="1080" y2="322.3" class="grid"/>
+<text x="70" y="326.3" text-anchor="end" class="small">30%</text>
+<line x1="80" y1="264.7" x2="1080" y2="264.7" class="grid"/>
+<text x="70" y="268.7" text-anchor="end" class="small">40%</text>
+<line x1="80" y1="207.1" x2="1080" y2="207.1" class="grid"/>
+<text x="70" y="211.1" text-anchor="end" class="small">50%</text>
+<line x1="80" y1="149.6" x2="1080" y2="149.6" class="grid"/>
+<text x="70" y="153.6" text-anchor="end" class="small">60%</text>
+<line x1="80" y1="92.0" x2="1080" y2="92.0" class="grid"/>
+<text x="70" y="96.0" text-anchor="end" class="small">70%</text>
+<line x1="80" y1="92" x2="80" y2="495" class="axis"/>
+<line x1="80" y1="495" x2="1080" y2="495" class="axis"/>
+<text x="307.5" y="77" text-anchor="middle" class="label">MATH</text>
+<rect x="111.5" y="196.2" width="21.8" height="298.8" fill="#2563eb" rx="3"/>
+<text x="122.4" y="191.2" text-anchor="middle" class="small">51.9</text>
+<rect x="137.7" y="196.2" width="21.8" height="298.8" fill="#16a34a" rx="3"/>
+<text x="148.6" y="191.2" text-anchor="middle" class="small">51.9</text>
+<text x="135.5" y="519" text-anchor="middle" class="small" transform="rotate(35 135.5 519)">Complete</text>
+<rect x="202.5" y="254.4" width="21.8" height="240.6" fill="#2563eb" rx="3"/>
+<text x="213.4" y="249.4" text-anchor="middle" class="small">41.8</text>
+<rect x="228.7" y="224.4" width="21.8" height="270.6" fill="#16a34a" rx="3"/>
+<text x="239.6" y="219.4" text-anchor="middle" class="small">47.0</text>
+<text x="226.5" y="519" text-anchor="middle" class="small" transform="rotate(35 226.5 519)">large rent x10</text>
+<rect x="293.5" y="270.5" width="21.8" height="224.5" fill="#2563eb" rx="3"/>
+<text x="304.4" y="265.5" text-anchor="middle" class="small">39.0</text>
+<rect x="319.7" y="241.7" width="21.8" height="253.3" fill="#16a34a" rx="3"/>
+<text x="330.6" y="236.7" text-anchor="middle" class="small">44.0</text>
+<text x="317.5" y="519" text-anchor="middle" class="small" transform="rotate(35 317.5 519)">small reward x0.2</text>
+<rect x="384.5" y="259.5" width="21.8" height="235.5" fill="#2563eb" rx="3"/>
+<text x="395.4" y="254.5" text-anchor="middle" class="small">40.9</text>
+<rect x="410.7" y="224.4" width="21.8" height="270.6" fill="#16a34a" rx="3"/>
+<text x="421.6" y="219.4" text-anchor="middle" class="small">47.0</text>
+<text x="408.5" y="519" text-anchor="middle" class="small" transform="rotate(35 408.5 519)">large reward x4</text>
+<rect x="475.5" y="242.3" width="21.8" height="252.7" fill="#2563eb" rx="3"/>
+<text x="486.4" y="237.3" text-anchor="middle" class="small">43.9</text>
+<rect x="501.7" y="166.8" width="21.8" height="328.2" fill="#16a34a" rx="3"/>
+<text x="512.6" y="161.8" text-anchor="middle" class="small">57.0</text>
+<text x="499.5" y="519" text-anchor="middle" class="small" transform="rotate(35 499.5 519)">original</text>
+<text x="807.5" y="77" text-anchor="middle" class="label">Finance</text>
+<rect x="611.5" y="235.9" width="21.8" height="259.1" fill="#2563eb" rx="3"/>
+<text x="622.4" y="230.9" text-anchor="middle" class="small">45.0</text>
+<rect x="637.7" y="235.9" width="21.8" height="259.1" fill="#16a34a" rx="3"/>
+<text x="648.6" y="230.9" text-anchor="middle" class="small">45.0</text>
+<text x="635.5" y="519" text-anchor="middle" class="small" transform="rotate(35 635.5 519)">Complete</text>
+<rect x="702.5" y="218.7" width="21.8" height="276.3" fill="#2563eb" rx="3"/>
+<text x="713.4" y="213.7" text-anchor="middle" class="small">48.0</text>
+<rect x="728.7" y="158.2" width="21.8" height="336.8" fill="#16a34a" rx="3"/>
+<text x="739.6" y="153.2" text-anchor="middle" class="small">58.5</text>
+<text x="726.5" y="519" text-anchor="middle" class="small" transform="rotate(35 726.5 519)">w/o auction</text>
+<rect x="793.5" y="345.3" width="21.8" height="149.7" fill="#2563eb" rx="3"/>
+<text x="804.4" y="340.3" text-anchor="middle" class="small">26.0</text>
+<rect x="819.7" y="264.7" width="21.8" height="230.3" fill="#16a34a" rx="3"/>
+<text x="830.6" y="259.7" text-anchor="middle" class="small">40.0</text>
+<text x="817.5" y="519" text-anchor="middle" class="small" transform="rotate(35 817.5 519)">w/o exploration</text>
+<rect x="884.5" y="302.1" width="21.8" height="192.9" fill="#2563eb" rx="3"/>
+<text x="895.4" y="297.1" text-anchor="middle" class="small">33.5</text>
+<rect x="910.7" y="149.6" width="21.8" height="345.4" fill="#16a34a" rx="3"/>
+<text x="921.6" y="144.6" text-anchor="middle" class="small">60.0</text>
+<text x="908.5" y="519" text-anchor="middle" class="small" transform="rotate(35 908.5 519)">w/o exploitation</text>
+<rect x="975.5" y="192.8" width="21.8" height="302.2" fill="#2563eb" rx="3"/>
+<text x="986.4" y="187.8" text-anchor="middle" class="small">52.5</text>
+<rect x="1001.7" y="120.8" width="21.8" height="374.2" fill="#16a34a" rx="3"/>
+<text x="1012.6" y="115.8" text-anchor="middle" class="small">65.0</text>
+<text x="999.5" y="519" text-anchor="middle" class="small" transform="rotate(35 999.5 519)">full</text>
+<rect x="930" y="42" width="18" height="12" fill="#2563eb" rx="2"/><text x="956" y="53" class="small">mean</text>
+<rect x="1010" y="42" width="18" height="12" fill="#16a34a" rx="2"/><text x="1036" y="53" class="small">best</text>
+</svg>

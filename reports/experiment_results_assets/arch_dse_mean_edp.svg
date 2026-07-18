@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="560" viewBox="0 0 1000 560">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>
+text { font-family: "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; fill: #1f2937; }
+.title { font-size: 24px; font-weight: 700; }
+.label { font-size: 14px; }
+.small { font-size: 12px; fill: #4b5563; }
+.axis { stroke: #9ca3af; stroke-width: 1; }
+.grid { stroke: #e5e7eb; stroke-width: 1; }
+</style>
+<text x="120" y="45" class="title">Arch DSE 平均 EDP 对比：越低越好</text>
+<text x="120" y="70" class="small">本地 EoM 使用 DeepSeek；论文参考值来自论文表格，严格复现时需统一模型和 baseline 口径。</text>
+<line x1="120" y1="455.0" x2="960" y2="455.0" class="grid"/>
+<text x="110" y="459.0" text-anchor="end" class="small">0</text>
+<line x1="120" y1="385.8" x2="960" y2="385.8" class="grid"/>
+<text x="110" y="389.8" text-anchor="end" class="small">50</text>
+<line x1="120" y1="316.5" x2="960" y2="316.5" class="grid"/>
+<text x="110" y="320.5" text-anchor="end" class="small">100</text>
+<line x1="120" y1="247.3" x2="960" y2="247.3" class="grid"/>
+<text x="110" y="251.3" text-anchor="end" class="small">150</text>
+<line x1="120" y1="178.0" x2="960" y2="178.0" class="grid"/>
+<text x="110" y="182.0" text-anchor="end" class="small">200</text>
+<line x1="120" y1="108.8" x2="960" y2="108.8" class="grid"/>
+<text x="110" y="112.8" text-anchor="end" class="small">250</text>
+<line x1="120" y1="90" x2="120" y2="455" class="axis"/>
+<line x1="120" y1="455" x2="960" y2="455" class="axis"/>
+<rect x="155.3" y="400.6" width="97.4" height="54.4" fill="#f59e0b" rx="4"/>
+<text x="204.0" y="392.6" text-anchor="middle" class="label">39.3</text>
+<text x="204.0" y="479" text-anchor="middle" class="small">论文 EoM</text>
+<rect x="323.3" y="395.3" width="97.4" height="59.7" fill="#fbbf24" rx="4"/>
+<text x="372.0" y="387.3" text-anchor="middle" class="label">43.1</text>
+<text x="372.0" y="479" text-anchor="middle" class="small">论文单智能体</text>
+<rect x="491.3" y="343.9" width="97.4" height="111.1" fill="#f97316" rx="4"/>
+<text x="540.0" y="335.9" text-anchor="middle" class="label">80.2</text>
+<text x="540.0" y="479" text-anchor="middle" class="small">论文 DOSA</text>
+<rect x="659.3" y="256.3" width="97.4" height="198.7" fill="#64748b" rx="4"/>
+<text x="708.0" y="248.3" text-anchor="middle" class="label">143.5</text>
+<text x="708.0" y="479" text-anchor="middle" class="small">本地 DOSA</text>
+<rect x="827.3" y="137.6" width="97.4" height="317.4" fill="#2563eb" rx="4"/>
+<text x="876.0" y="129.6" text-anchor="middle" class="label">229.2</text>
+<text x="876.0" y="479" text-anchor="middle" class="small">本地 EoM</text>
+<text x="540.0" y="542" text-anchor="middle" class="small">单位：uJ*Mcyc</text>
+</svg>
