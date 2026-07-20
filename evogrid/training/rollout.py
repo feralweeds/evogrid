@@ -33,11 +33,12 @@ def run_episode(env, agent, seed: int | None = None, collect_frames: bool = Fals
         if terminated or truncated:
             break
 
+    final_metrics = env.get_audit_snapshot() if hasattr(env, "get_audit_snapshot") else info
     trace = list(getattr(agent, "trace", []))
     return EpisodeResult(
-        metrics=info,
+        metrics=final_metrics,
         total_reward=total_reward,
-        steps=info.get("steps", 0),
+        steps=final_metrics.get("steps", 0),
         frames=frames,
         trace=trace,
     )
@@ -50,4 +51,3 @@ def run_episodes(env_factory, agent_factory, episodes: int, seed: int = 0) -> li
         agent = agent_factory()
         results.append(run_episode(env, agent, seed=seed + idx))
     return results
-

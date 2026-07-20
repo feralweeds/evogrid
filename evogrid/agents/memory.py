@@ -14,6 +14,7 @@ Position = tuple[int, int]
 @dataclass
 class AgentMemory:
     seen_tiles: dict[Position, int] = field(default_factory=dict)
+    seen_terrain_bands: dict[Position, str] = field(default_factory=dict)
     seen_ore_locations: set[Position] = field(default_factory=set)
     seen_obstacles: set[Position] = field(default_factory=set)
     seen_rough_tiles: set[Position] = field(default_factory=set)
@@ -41,11 +42,13 @@ class AgentMemory:
         if agent_pos is not None:
             self.visited_counts[agent_pos] = self.visited_counts.get(agent_pos, 0) + 1
 
-        for pos, tile in _iter_observed_tiles(obs):
+        for pos, tile, terrain_band in _iter_observed_tiles(obs):
             previous_tile = self.seen_tiles.get(pos)
             if previous_tile != tile:
                 self.update_count += 1
             self.seen_tiles[pos] = tile
+            if terrain_band is not None:
+                self.seen_terrain_bands[pos] = terrain_band
             self._sync_tile_sets(pos, tile)
             if tile == int(Tile.ORE) and self.first_ore_seen_step is None:
                 self.first_ore_seen_step = step
@@ -80,7 +83,7 @@ class AgentMemory:
                 self.built_roads.add(agent_pos)
 
         if _metric_increased(info, previous_info, "num_dig"):
-            for pos, tile in _iter_observed_tiles(obs):
+            for pos, tile, _terrain_band in _iter_observed_tiles(obs):
                 if self.seen_tiles.get(pos) == int(Tile.OBSTACLE) and tile == int(Tile.GROUND):
                     self.dug_cells.add(pos)
 
@@ -105,6 +108,7 @@ class AgentMemory:
             "known_obstacle_count": len(self.seen_obstacles),
             "known_rough_count": len(self.seen_rough_tiles),
             "known_road_count": len(self.seen_roads),
+            "known_terrain_band_count": len(self.seen_terrain_bands),
             "visited_cell_count": len(self.visited_counts),
             "memory_updates": self.update_count,
             "known_ore_locations": _positions(self.seen_ore_locations, max_items),
@@ -129,6 +133,10 @@ class AgentMemory:
             "seen_obstacles": _positions(self.seen_obstacles),
             "seen_rough_tiles": _positions(self.seen_rough_tiles),
             "seen_roads": _positions(self.seen_roads),
+            "seen_terrain_bands": [
+                {"pos": list(pos), "terrain_band": band}
+                for pos, band in sorted(self.seen_terrain_bands.items())
+            ],
             "visited_counts": [
                 {"pos": list(pos), "count": count} for pos, count in sorted(self.visited_counts.items())
             ],
@@ -172,24 +180,28 @@ class AgentMemory:
             self.road_credit_records.append(clean)
 
 
-def _iter_observed_tiles(obs: dict) -> Iterable[tuple[Position, int]]:
+def _iter_observed_tiles(obs: dict) -> Iterable[tuple[Position, int, str | None]]:
     if obs.get("visible_tiles"):
         for item in obs["visible_tiles"]:
-            yield _position(item["pos"]), int(item["tile"])
+            yield _position(item["pos"]), int(item["tile"]), item.get("terrain_band")
         return
 
     if "local_view" in obs:
         origin_row, origin_col = obs.get("local_view_origin", [0, 0])
+        terrain_bands = obs.get("local_terrain_bands")
         for row_idx, row in enumerate(obs["local_view"]):
             for col_idx, value in enumerate(row):
                 if value is not None:
-                    yield (origin_row + row_idx, origin_col + col_idx), int(value)
+                    band = None
+                    if terrain_bands is not None:
+                        band = terrain_bands[row_idx][col_idx]
+                    yield (origin_row + row_idx, origin_col + col_idx), int(value), band
         return
 
     if "grid" in obs:
         for row_idx, row in enumerate(obs["grid"]):
             for col_idx, value in enumerate(row):
-                yield (row_idx, col_idx), int(value)
+                yield (row_idx, col_idx), int(value), None
 
 
 def _position(value) -> Position:

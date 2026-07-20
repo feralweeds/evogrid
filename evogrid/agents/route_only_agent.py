@@ -38,6 +38,27 @@ class RouteOnlyAgent(BaseAgent):
         self._record_trace(obs, action, route_plan)
         return int(action)
 
+    def skill_context_hints(self, obs: dict, info: dict) -> dict:
+        """Expose fallback-visible state for SkillContext construction."""
+        self.memory.update_from_observation(obs)
+        action, route_plan = self._route_only_action(obs)
+        opportunity = ShapingOpportunityBuilder().build(
+            obs=obs,
+            info=info,
+            memory=self.memory,
+            route_plan=route_plan,
+            mode="RETURN_BASE" if obs.get("has_ore") else "GO_TO_ORE",
+        )
+        return {
+            "memory_summary": _skill_memory_summary(self.memory, obs, opportunity),
+            "route_plan": _skill_route_summary(route_plan),
+            "fallback_action": int(action),
+            "_fallback_route_plan": route_plan,
+        }
+
+    def record_precomputed_action(self, obs: dict, action: int, route_plan: RoutePlan | None) -> None:
+        self._record_trace(obs, action, route_plan)
+
     def observe_result(
         self,
         action: int,
@@ -419,6 +440,54 @@ def _route_trace(route_plan: RoutePlan | None) -> dict:
         "path_length": len(route_plan.path),
         "planner_mode": route_plan.mode,
     }
+
+
+def _skill_route_summary(route_plan: RoutePlan | None) -> dict:
+    if route_plan is None:
+        return {
+            "exists": False,
+            "is_known_transport_route": False,
+            "remaining_length_bucket": "unknown",
+        }
+    return {
+        "exists": True,
+        "is_known_transport_route": True,
+        "remaining_length_bucket": _length_bucket(len(route_plan.path)),
+        "target_pos": route_plan.target_pos,
+        "next_pos": route_plan.next_pos,
+        "planner_mode": route_plan.mode,
+    }
+
+
+def _skill_memory_summary(memory: AgentMemory, obs: dict, opportunity: dict) -> dict:
+    summary = memory.summary()
+    agent_pos = _position(obs["agent_pos"])
+    visit_count = int(memory.visited_counts.get(agent_pos, 0) or 0)
+    estimate = opportunity.get("learned_estimate", {}) if opportunity.get("available") else {}
+    summary.update(
+        {
+            "visit_count_bucket": _visit_count_bucket(visit_count),
+            "similar_outcome_count": int(estimate.get("evidence_count", 0) or 0),
+            "similar_mean_payoff": float(estimate.get("learned_value", 0.0) or 0.0),
+        }
+    )
+    return summary
+
+
+def _visit_count_bucket(count: int) -> str:
+    if count <= 1:
+        return "low"
+    if count <= 3:
+        return "medium"
+    return "high"
+
+
+def _length_bucket(length: int) -> str:
+    if length <= 4:
+        return "short"
+    if length <= 10:
+        return "medium"
+    return "long"
 
 
 def _position(value) -> Position:

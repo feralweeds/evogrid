@@ -7,8 +7,8 @@ from copy import deepcopy
 from typing import Iterable, Tuple
 
 from evogrid.constants import Action, MOVE_DELTAS, Tile
-from evogrid.envs.map_builder import build_fixed_map
-from evogrid.envs.map_state import MapState, Position
+from evogrid.envs.map_builder import build_map
+from evogrid.envs.map_state import MapState, Position, terrain_band
 from evogrid.envs.metrics import collect_metrics
 from evogrid.envs.reward import RewardConfig
 
@@ -29,24 +29,36 @@ class EvoGridMineEnv:
         self.local_view_radius = int(
             observation_config.get("local_view_radius") or self.env_config.get("local_view_radius") or 4
         )
+        self.expose_continuous_roughness = bool(observation_config.get("expose_continuous_roughness", False))
         shaping = self.env_config.get("shaping", {})
         self.allow_dig = bool(shaping.get("allow_dig", True))
         self.allow_build_road = bool(shaping.get("allow_build_road", True))
         self.reset_after_dropoff = bool(shaping.get("reset_after_dropoff", False))
         self.rewards = RewardConfig.from_config(self.config)
+        self.reward_mode = str(self.env_config.get("reward_mode", "legacy_discrete"))
+        terrain_config = self.env_config.get("world", {}).get("terrain", {})
+        self.observation_bins = tuple(float(value) for value in terrain_config.get("observation_bins", [0.25, 0.5, 0.75]))
+        self.terrain_base_move_cost = float(terrain_config.get("base_move_cost", 0.01))
+        self.terrain_roughness_strength = float(terrain_config.get("roughness_strength", 0.04))
+        self.terrain_cost_exponent = float(terrain_config.get("cost_exponent", 1.0))
+        self.terrain_road_move_cost = float(terrain_config.get("road_move_cost", 0.0))
         self.initial_grid: list[list[int]] = []
         self.state: MapState | None = None
 
     def reset(self, seed: int | None = None) -> tuple[dict, dict]:
-        grid, base_pos, ore_positions = build_fixed_map(self.config, seed=seed)
+        map_result = build_map(self.config, seed=seed)
+        grid = map_result.grid
         self.initial_grid = deepcopy(grid)
         self.state = MapState(
             grid=grid,
-            base_pos=base_pos,
-            ore_positions=ore_positions,
-            agent_pos=base_pos,
+            roughness=map_result.roughness,
+            map_id=map_result.map_id,
+            static_diagnostics=map_result.diagnostics.copy(),
+            base_pos=map_result.base_pos,
+            ore_positions=map_result.ore_positions,
+            agent_pos=map_result.base_pos,
         )
-        self.state.record_visit(base_pos)
+        self.state.record_visit(map_result.base_pos)
         return self._obs(), self._info()
 
     def step(self, action: int | Action) -> tuple[dict, float, bool, bool, dict]:
@@ -115,11 +127,7 @@ class EvoGridMineEnv:
         if tile == Tile.ROAD and target in self.state.built_roads:
             self.state.road_visited.add(target)
             self.state.road_credit_tracker.record_use(target, self.state.step_count)
-        if tile == Tile.ROAD:
-            return self.rewards.move_road, True
-        if tile == Tile.ROUGH:
-            return self.rewards.move_rough, True
-        return self.rewards.move_ground, True
+        return -self._move_cost(tile, target), True
 
     def _mine(self) -> tuple[float, bool]:
         assert self.state is not None
@@ -165,8 +173,8 @@ class EvoGridMineEnv:
         self.state.road_credit_tracker.record_build(
             position=pos,
             original_tile=tile,
-            original_move_cost=self._move_cost(tile),
-            road_move_cost=self._move_cost(Tile.ROAD),
+            original_move_cost=self._move_cost(tile, pos),
+            road_move_cost=self._move_cost(Tile.ROAD, pos),
             build_cost=max(0.0, -float(self.rewards.build_road)),
             build_step=self.state.step_count,
         )
@@ -213,7 +221,19 @@ class EvoGridMineEnv:
                 return pos
         return None
 
-    def _move_cost(self, tile: Tile) -> float:
+    def _move_cost(self, tile: Tile, pos: Position | None = None) -> float:
+        if self.reward_mode == "continuous_terrain" and self.state is not None and self.state.roughness is not None:
+            if tile == Tile.ROAD:
+                return max(0.0, self.terrain_road_move_cost)
+            if pos is None:
+                raise ValueError("continuous terrain move cost requires a position")
+            row, col = pos
+            roughness = float(self.state.roughness[row][col])
+            return max(
+                0.0,
+                self.terrain_base_move_cost
+                + self.terrain_roughness_strength * (roughness ** self.terrain_cost_exponent),
+            )
         if tile == Tile.ROAD:
             return max(0.0, -float(self.rewards.move_road))
         if tile == Tile.ROUGH:
@@ -225,12 +245,16 @@ class EvoGridMineEnv:
         return self.state.to_observation(
             mode=self.observation_mode,
             local_view_radius=self.local_view_radius,
+            observation_bins=self.observation_bins,
+            expose_continuous_roughness=self.expose_continuous_roughness,
         )
 
     def _info(self) -> dict:
         assert self.state is not None
         metrics = collect_metrics(self.state).to_dict()
-        metrics.update(self._map_diagnostics())
+        if self.observation_mode != "partial_obs":
+            metrics.update(self._map_diagnostics())
+            metrics.update(self.state.static_diagnostics)
         metrics["max_steps"] = self.max_steps
         metrics["steps_remaining"] = max(0, self.max_steps - self.state.step_count)
         map_summary = {
@@ -244,15 +268,28 @@ class EvoGridMineEnv:
         metrics["map_summary"] = map_summary
         return metrics
 
+    def get_audit_snapshot(self) -> dict:
+        if self.state is None:
+            raise RuntimeError("Call reset() before get_audit_snapshot().")
+        snapshot = collect_metrics(self.state).to_dict()
+        snapshot.update(self.state.static_diagnostics)
+        snapshot.update(self._map_diagnostics())
+        snapshot["max_steps"] = self.max_steps
+        snapshot["steps_remaining"] = max(0, self.max_steps - self.state.step_count)
+        snapshot["map_summary"] = {
+            "agent_pos": list(self.state.agent_pos),
+            "base_pos": list(self.state.base_pos),
+            "ore_positions": [list(pos) for pos in sorted(self.state.ore_positions)],
+            "has_ore": self.state.has_ore,
+            "step": self.state.step_count,
+            "map_id": self.state.map_id,
+        }
+        return snapshot
+
     def _map_diagnostics(self) -> dict:
         assert self.state is not None
         grid = self.initial_grid or self.state.grid
-        rough_cells = {
-            (row, col)
-            for row, values in enumerate(grid)
-            for col, value in enumerate(values)
-            if Tile(value) == Tile.ROUGH
-        }
+        rough_cells = _rough_opportunity_cells(grid, self.state.roughness, self.observation_bins)
         buildable_cells = {
             (row, col)
             for row, values in enumerate(grid)
@@ -272,6 +309,27 @@ class EvoGridMineEnv:
             "off_route_rough_tile_count": off_route_rough_count,
             "positive_road_opportunity_count": route_rough_count,
         }
+
+
+def _rough_opportunity_cells(
+    grid: list[list[int]],
+    roughness: list[list[float]] | None,
+    observation_bins: tuple[float, ...],
+) -> set[Position]:
+    if roughness is None:
+        return {
+            (row, col)
+            for row, values in enumerate(grid)
+            for col, value in enumerate(values)
+            if Tile(value) == Tile.ROUGH
+        }
+    return {
+        (row, col)
+        for row, values in enumerate(grid)
+        for col, value in enumerate(values)
+        if Tile(value) in {Tile.GROUND, Tile.ROUGH}
+        and terrain_band(float(roughness[row][col]), observation_bins) in {"ROUGH", "VERY_ROUGH"}
+    }
 
 
 def _tile_char(tile: Tile) -> str:

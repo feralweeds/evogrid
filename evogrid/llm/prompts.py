@@ -58,6 +58,7 @@ def summarize_observation(obs: dict) -> dict:
             "local_view_radius": obs.get("local_view_radius"),
             "local_view_origin": obs.get("local_view_origin"),
             "visible_tile_counts": _count_visible_tiles(visible_tiles),
+            "visible_terrain_band_counts": _count_visible_terrain_bands(visible_tiles),
             "visible_ore_positions": [
                 item["pos"] for item in visible_tiles if int(item.get("tile", -1)) == int(Tile.ORE)
             ],
@@ -400,6 +401,16 @@ def _count_visible_tiles(visible_tiles: list[dict]) -> dict[str, int]:
     for item in visible_tiles:
         tile_name = Tile(int(item["tile"])).name
         counts[tile_name] = counts.get(tile_name, 0) + 1
+    return counts
+
+
+def _count_visible_terrain_bands(visible_tiles: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in visible_tiles:
+        band = item.get("terrain_band")
+        if band is None:
+            continue
+        counts[str(band)] = counts.get(str(band), 0) + 1
     return counts
 
 

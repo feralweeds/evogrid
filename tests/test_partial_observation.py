@@ -82,6 +82,44 @@ class PartialObservationTest(unittest.TestCase):
         self.assertNotIn("ore_positions", summary)
         self.assertEqual(summary["visible_ore_positions"], [])
 
+    def test_memory_records_only_visible_terrain_bands(self):
+        obs = {
+            "observation_mode": "partial_obs",
+            "agent_pos": [1, 1],
+            "base_pos": [1, 1],
+            "has_ore": False,
+            "step": 0,
+            "ore_delivered": 0,
+            "visible_tiles": [
+                {"pos": [1, 1], "tile": int(Tile.GROUND), "terrain_band": "ROUGH"},
+                {"pos": [1, 2], "tile": int(Tile.GROUND)},
+            ],
+        }
+        memory = AgentMemory()
+
+        memory.update_from_observation(obs)
+
+        self.assertEqual(memory.seen_terrain_bands, {(1, 1): "ROUGH"})
+        self.assertEqual(memory.summary()["known_terrain_band_count"], 1)
+
+    def test_prompt_summarizes_terrain_bands_without_roughness_values(self):
+        obs = {
+            "observation_mode": "partial_obs",
+            "agent_pos": [1, 1],
+            "base_pos": [1, 1],
+            "has_ore": False,
+            "step": 0,
+            "ore_delivered": 0,
+            "visible_tiles": [
+                {"pos": [1, 1], "tile": int(Tile.GROUND), "terrain_band": "VERY_ROUGH"},
+            ],
+        }
+
+        summary = summarize_observation(obs)
+
+        self.assertEqual(summary["visible_terrain_band_counts"], {"VERY_ROUGH": 1})
+        self.assertNotIn("roughness", json_like_keys(summary))
+
     def test_action_diagnostics_expose_directional_distance_without_hidden_map(self):
         obs = {
             "observation_mode": "partial_obs",
@@ -265,6 +303,18 @@ class PartialObservationTest(unittest.TestCase):
         agent = SelfEvolutionAgent(memory=memory)
         self.assertEqual(agent.act(obs, {}), int(Action.DIG))
         self.assertEqual(agent.route_trace[-1]["planner_mode"], "dig_known_obstacle")
+
+
+def json_like_keys(value) -> set[str]:
+    keys: set[str] = set()
+    if isinstance(value, dict):
+        for key, item in value.items():
+            keys.add(str(key))
+            keys.update(json_like_keys(item))
+    elif isinstance(value, list):
+        for item in value:
+            keys.update(json_like_keys(item))
+    return keys
 
 
 if __name__ == "__main__":

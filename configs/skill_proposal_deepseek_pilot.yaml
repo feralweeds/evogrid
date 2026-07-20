@@ -1,0 +1,46 @@
+proposal:
+  schema_version: 1
+  mode: pilot
+  backend: deepseek
+  deepseek:
+    base_url: https://api.deepseek.com
+    model: deepseek-chat
+    timeout: 30
+    max_tokens: 1200
+    json_mode: true
+    temperature: 0.2
+  trajectories:
+    - episode_id: train/deepseek_proposal_pilot/1
+      partition: train
+      observations:
+        - agent_pos: [2, 2]
+          has_ore: false
+          visible_tiles:
+            - pos: [2, 2]
+              tile: 0
+              terrain_band: ROUGH
+            - pos: [2, 3]
+              tile: 0
+              terrain_band: VERY_ROUGH
+      action_results:
+        - action: BUILD_ROAD
+          reward: -0.1
+          later_reused: true
+          observed_payoff: 0.02
+    - episode_id: train/deepseek_proposal_pilot/2
+      partition: train
+      observations:
+        - agent_pos: [4, 4]
+          has_ore: false
+          visible_tiles:
+            - pos: [4, 4]
+              tile: 0
+              terrain_band: SMOOTH
+            - pos: [4, 5]
+              tile: 0
+              terrain_band: SMOOTH
+      action_results:
+        - action: BUILD_ROAD
+          reward: -0.1
+          later_reused: false
+          observed_payoff: -0.1

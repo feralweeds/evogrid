@@ -1,0 +1,37 @@
+curriculum_id: curriculum_self_evolution_v1
+controller_version: fixed_schedule_v1
+allowed_partitions: [train, gate]
+stages:
+  - stage_id: open_small
+    env_family:
+      sizes: [[16, 16]]
+      p_open: [0.76]
+      topology_hurst: [0.35]
+      terrain_hurst: [0.25, 0.5]
+    train_budget_episodes: 12
+    gate_benchmark_id: open_small_gate_v1
+    promotion_rule:
+      capability_score_gte: 0.62
+      consecutive_windows: 2
+  - stage_id: mixed_medium
+    env_family:
+      sizes: [[24, 24], [32, 32]]
+      p_open: [0.66, 0.72]
+      topology_hurst: [0.35, 0.65]
+      terrain_hurst: [0.25, 0.5, 0.75]
+    train_budget_episodes: 18
+    gate_benchmark_id: mixed_medium_gate_v1
+    promotion_rule:
+      capability_score_gte: 0.68
+      consecutive_windows: 2
+  - stage_id: rough_large
+    env_family:
+      sizes: [[32, 32]]
+      p_open: [0.58, 0.64]
+      topology_hurst: [0.65]
+      terrain_hurst: [0.5, 0.8]
+    train_budget_episodes: 24
+    gate_benchmark_id: rough_large_gate_v1
+    promotion_rule:
+      capability_score_gte: 0.72
+      consecutive_windows: 3

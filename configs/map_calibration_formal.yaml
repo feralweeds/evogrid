@@ -1,0 +1,51 @@
+calibration:
+  schema_version: 1
+  experiment_type: map_calibration
+  formal_min_seeds_per_cell: 100
+  reproducibility_sample_count: 30
+  sizes:
+    - [64, 64]
+    - [128, 128]
+    - [256, 256]
+  topology_hurst: [0.2, 0.5, 0.8]
+  terrain_hurst: [0.5]
+  p_open: [0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85]
+  resource_distribution: [uniform]
+
+env:
+  map_mode: fractal_percolation
+  grid_size: [64, 64]
+  world:
+    schema_version: 1
+    generator_version: spectral_fbm_v1
+    world_seed: 0
+    topology:
+      model: correlated_site
+      p_open: 0.65
+      hurst: 0.50
+      solvability_mode: raw
+      task_component: largest
+      min_task_component_fraction: 0.0
+      boundary_mode: finite_4_neighbor
+    terrain:
+      model: fractional_gaussian_surface
+      hurst: 0.50
+      base_move_cost: 0.01
+      roughness_strength: 0.04
+      cost_exponent: 1.0
+      road_move_cost: 0.00
+      observation_bins: [0.25, 0.50, 0.75]
+    resources:
+      distribution: uniform
+      count: 1
+      hurst: 0.70
+      renewable: true
+      min_base_distance: 8
+      min_pair_distance: 4
+    placement:
+      base_margin: 2
+      max_attempts: 100
+    diagnostics:
+      enabled: true
+      estimate_hurst: true
+      articulation_points: true

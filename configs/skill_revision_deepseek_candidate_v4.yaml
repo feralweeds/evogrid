@@ -1,0 +1,14 @@
+revision:
+  schema_version: 1
+  mode: revision_pilot
+  backend: deepseek
+  candidate_path: outputs/runs/r4_deepseek_candidate_revision_real_v3/skills/candidates/build_road_on_rough_terrain_if_reused/1.0.3.json
+  verification_report_path: outputs/runs/r4_deepseek_candidate_1_0_3_rollout_verify_pilot_v2/skills/reports/build_road_on_rough_terrain_if_reused/1.0.3/verify_build_road_on_rough_terrain_if_reused_5455c1a6.json
+  new_version: 1.0.4
+  deepseek:
+    base_url: https://api.deepseek.com
+    model: deepseek-chat
+    temperature: 0.2
+    max_tokens: 1800
+    timeout: 60
+    json_mode: true

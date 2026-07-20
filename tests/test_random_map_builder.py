@@ -81,7 +81,8 @@ class RandomMapBuilderTest(unittest.TestCase):
             env = EvoGridMineEnv(_controlled_config("positive"))
             obs, info = env.reset(seed=seed)
             self.assertEqual(obs["observation_mode"], "partial_obs")
-            route_rough_counts.append(int(info["route_rough_tile_count"]))
+            self.assertNotIn("route_rough_tile_count", info)
+            route_rough_counts.append(int(env.get_audit_snapshot()["route_rough_tile_count"]))
 
         self.assertGreaterEqual(sum(1 for count in route_rough_counts if count > 0), 24)
         self.assertGreater(sum(route_rough_counts) / len(route_rough_counts), 1.5)
@@ -92,7 +93,9 @@ class RandomMapBuilderTest(unittest.TestCase):
             env = EvoGridMineEnv(_controlled_config("negative"))
             obs, info = env.reset(seed=seed)
             self.assertEqual(obs["observation_mode"], "partial_obs")
-            if int(info["off_route_rough_tile_count"]) >= int(info["route_rough_tile_count"]):
+            self.assertNotIn("off_route_rough_tile_count", info)
+            audit = env.get_audit_snapshot()
+            if int(audit["off_route_rough_tile_count"]) >= int(audit["route_rough_tile_count"]):
                 off_route_wins += 1
 
         self.assertGreaterEqual(off_route_wins, 24)

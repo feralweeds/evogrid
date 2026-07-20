@@ -14,6 +14,7 @@ from evogrid.agents.memory_route_planner import MemoryMapRoutePlanner, RoutePlan
 from evogrid.agents.partial_greedy_agent import PartialGreedyAgent
 from evogrid.agents.self_evolution_agent import SelfEvolutionAgent
 from evogrid.agents.shaping_opportunity import RoadEconomics, ShapingOpportunityBuilder
+from evogrid.agents.skill_agent import SkillAgent
 
 __all__ = [
     "BaseAgent",
@@ -36,4 +37,5 @@ __all__ = [
     "RoadLearningModule",
     "RoadLearningStats",
     "ShapingOpportunityBuilder",
+    "SkillAgent",
 ]

@@ -1,0 +1,55 @@
+env:
+  map_mode: fractal_percolation
+  grid_size: [128, 128]
+  max_steps: 300
+  reward_mode: continuous_terrain
+  world:
+    schema_version: 1
+    generator_version: spectral_fbm_v1
+    world_seed: 0
+    topology:
+      model: correlated_site
+      p_open: 1.0
+      hurst: 0.50
+      solvability_mode: conditioned_same_component
+      task_component: largest
+      min_task_component_fraction: 0.0
+      boundary_mode: finite_4_neighbor
+    terrain:
+      model: fractional_gaussian_surface
+      hurst: 0.70
+      base_move_cost: 0.01
+      roughness_strength: 0.04
+      cost_exponent: 1.0
+      road_move_cost: 0.00
+      observation_bins: [0.25, 0.50, 0.75]
+    resources:
+      distribution: uniform
+      count: 1
+      hurst: 0.70
+      renewable: true
+      min_base_distance: 24
+      min_pair_distance: 8
+    placement:
+      base_margin: 4
+      max_attempts: 100
+    diagnostics:
+      enabled: true
+      estimate_hurst: true
+      articulation_points: true
+  observation:
+    mode: partial_obs
+    local_view_radius: 4
+    expose_continuous_roughness: false
+  shaping:
+    allow_dig: true
+    allow_build_road: true
+    reset_after_dropoff: false
+  rewards:
+    dropoff: 10.0
+    dig: -0.2
+    build_road: -0.1
+    mine: -0.01
+    dropoff_action: -0.01
+    noop: -0.01
+    invalid_action: -0.05

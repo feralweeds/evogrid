@@ -1,0 +1,15 @@
+experiment:
+  mode: mock_smoke
+  root_seed: 20260719
+chunk_world:
+  root_seed: 20260719
+  chunk_size: 12
+  halo: 1
+  p_open: 0.68
+  topology_hurst: 0.55
+  terrain_hurst: 0.45
+  ore_threshold: 0.9
+  max_cached_chunks: 4
+skill_transfer:
+  skill_id: finite_map_route_bias
+  version: 1.0.0

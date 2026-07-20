@@ -1,0 +1,16 @@
+proposal:
+  schema_version: 1
+  mode: pilot
+  backend: fixture_valid
+  trajectories:
+    - episode_id: train/episode/1
+      partition: train
+      observations:
+        - agent_pos: [2, 2]
+          visible_tiles:
+            - pos: [2, 2]
+              tile: 0
+              terrain_band: ROUGH
+      action_results:
+        - action: BUILD_ROAD
+          reward: -0.1

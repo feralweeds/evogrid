@@ -1,0 +1,33 @@
+experiment:
+  mode: mock_smoke
+  root_seed: 20260719
+  groups:
+    - fixed_stage
+    - random_parameter
+    - adaptive
+    - fast_promotion
+    - static_single_env
+  metrics:
+    - skill_acquisition_rate
+    - retention_score
+    - independent_test_score
+adaptive_controller:
+  root_seed: 20260719
+  target_min: 0.45
+  target_max: 0.75
+  parameter_rules:
+    - name: p_open
+      min_value: 0.45
+      max_value: 0.85
+      max_delta: 0.03
+      harder_delta_sign: -1
+    - name: topology_hurst
+      min_value: 0.2
+      max_value: 0.9
+      max_delta: 0.05
+      harder_delta_sign: 1
+    - name: terrain_hurst
+      min_value: 0.1
+      max_value: 0.9
+      max_delta: 0.05
+      harder_delta_sign: 1

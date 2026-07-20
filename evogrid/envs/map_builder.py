@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import random
 from collections import deque
+from dataclasses import asdict
 from typing import Iterable, List, Sequence, Tuple
 
 from evogrid.constants import Tile
+from evogrid.envs.map_generation.fractal_percolation import FractalPercolationMapGenerator
+from evogrid.envs.map_generation.schemas import (
+    MapBuildResult,
+    MapGenerationConfig,
+    stable_map_id,
+)
 
 Position = Tuple[int, int]
 
@@ -23,7 +30,49 @@ def _set_many(grid: List[List[int]], positions: Iterable[Position], tile: Tile) 
             grid[row][col] = int(tile)
 
 
+def build_map(config: dict | None = None, seed: int | None = None) -> MapBuildResult:
+    generation_config = MapGenerationConfig.from_config(config, seed=seed)
+    if generation_config.map_mode == "fractal_percolation":
+        return FractalPercolationMapGenerator().build(
+            generation_config,
+            generation_config.world.world_seed,
+        )
+
+    grid, base_pos, ore_positions = _build_legacy_map(config, seed=seed)
+    payload = {
+        "grid": grid,
+        "base_pos": base_pos,
+        "ore_positions": ore_positions,
+        "map_mode": generation_config.map_mode,
+        "world_seed": generation_config.world.world_seed,
+    }
+    map_id = stable_map_id(payload)
+    diagnostics = _legacy_diagnostics(grid, map_id, generation_config.map_mode)
+    provenance = {
+        "schema_version": 1,
+        "map_mode": generation_config.map_mode,
+        "world_seed": generation_config.world.world_seed,
+        "generator_version": generation_config.world.generator_version,
+        "config": asdict(generation_config),
+    }
+    return MapBuildResult(
+        schema_version=1,
+        map_id=map_id,
+        grid=grid,
+        roughness=None,
+        base_pos=base_pos,
+        ore_positions=ore_positions,
+        diagnostics=diagnostics,
+        provenance=provenance,
+    )
+
+
 def build_fixed_map(config: dict | None = None, seed: int | None = None) -> tuple[List[List[int]], Position, set[Position]]:
+    result = build_map(config, seed=seed)
+    return result.grid, result.base_pos, result.ore_positions
+
+
+def _build_legacy_map(config: dict | None = None, seed: int | None = None) -> tuple[List[List[int]], Position, set[Position]]:
     config = config or {}
     env_config = config.get("env", config)
     if str(env_config.get("map_mode", "fixed")) == "random_curriculum":
@@ -68,6 +117,26 @@ def build_fixed_map(config: dict | None = None, seed: int | None = None) -> tupl
         grid[row][col] = int(Tile.ORE)
 
     return grid, base_pos, ore_positions
+
+
+def _legacy_diagnostics(grid: list[list[int]], map_id: str, map_mode: str) -> dict:
+    tile_counts: dict[str, int] = {}
+    for row in grid:
+        for value in row:
+            name = Tile(value).name
+            tile_counts[name] = tile_counts.get(name, 0) + 1
+    total_cells = len(grid) * len(grid[0]) if grid else 0
+    open_count = total_cells - tile_counts.get("OBSTACLE", 0)
+    return {
+        "schema_version": 1,
+        "map_id": map_id,
+        "map_mode": map_mode,
+        "tile_counts": tile_counts,
+        "target_p_open": None,
+        "realized_p_open": (open_count / total_cells) if total_cells else 0.0,
+        "valid_for_percolation_analysis": False,
+        "placement_status": "legacy_carved",
+    }
 
 
 def build_random_curriculum_map(

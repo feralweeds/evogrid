@@ -1,0 +1,83 @@
+verification:
+  schema_version: 1
+  protocol_id: skill_verification_v1
+  mode: pilot
+  primary_metric: road_net_payoff
+  direction: maximize
+  min_effect: 0.0
+  min_success_rate: 0.55
+  max_false_trigger_rate: 0.25
+  min_paired_samples: 10
+  bootstrap_iterations: 300
+  ci_level: 0.95
+  max_runtime_failure_rate: 0.05
+  max_invalid_action_rate_delta: 0.02
+  min_activation_rate: 0.0
+  requires_transfer: false
+  min_transfer_strata: 2
+  max_redundancy_score: 1.0
+  bootstrap_seed: 17
+  paired_seeds: [4100, 4101, 4102, 4103, 4104, 4105, 4106, 4107, 4108, 4109]
+  environment_strata: [rollout_road_positive, rollout_road_negative]
+  source_train_seeds: []
+  evaluator: rollout_route_skill
+  episode_max_steps: 120
+  estimator_values:
+    future_route_uses: 5
+    road_break_even_uses: 3
+  env_config:
+    env:
+      map_mode: fractal_percolation
+      grid_size: [32, 32]
+      max_steps: 120
+      reward_mode: continuous_terrain
+      world:
+        schema_version: 1
+        generator_version: spectral_fbm_v1
+        world_seed: 0
+        topology:
+          model: correlated_site
+          p_open: 1.0
+          hurst: 0.50
+          solvability_mode: conditioned_same_component
+          task_component: largest
+          min_task_component_fraction: 0.0
+          boundary_mode: finite_4_neighbor
+        terrain:
+          model: fractional_gaussian_surface
+          hurst: 0.70
+          base_move_cost: 0.01
+          roughness_strength: 0.04
+          cost_exponent: 1.0
+          road_move_cost: 0.00
+          observation_bins: [0.25, 0.50, 0.75]
+        resources:
+          distribution: uniform
+          count: 1
+          hurst: 0.70
+          renewable: true
+          min_base_distance: 10
+          min_pair_distance: 4
+        placement:
+          base_margin: 3
+          max_attempts: 100
+        diagnostics:
+          enabled: true
+          estimate_hurst: true
+          articulation_points: false
+      observation:
+        mode: partial_obs
+        local_view_radius: 4
+        expose_continuous_roughness: false
+      shaping:
+        allow_dig: true
+        allow_build_road: true
+        reset_after_dropoff: false
+      rewards:
+        dropoff: 10.0
+        dig: -0.2
+        build_road: -0.1
+        mine: -0.01
+        dropoff_action: -0.01
+        noop: -0.01
+        invalid_action: -0.05
