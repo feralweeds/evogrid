@@ -432,9 +432,11 @@ def _validate_procedure_node(node: dict[str, Any]) -> None:
 
 
 def _validate_budget(budget: dict[str, Any]) -> None:
-    for key in ("max_runtime_steps", "max_environment_actions", "max_nested_skill_depth"):
+    for key in ("max_runtime_steps", "max_environment_actions", "max_nested_skill_depth", "max_uses_per_episode"):
         if key in budget and int(budget[key]) < 0:
             raise ValueError(f"budget.{key}: expected non-negative")
+    if "stop_after_success" in budget and not isinstance(budget["stop_after_success"], bool):
+        raise ValueError("budget.stop_after_success: expected boolean")
 
 
 def _validate_objective(objective: dict[str, Any]) -> None:

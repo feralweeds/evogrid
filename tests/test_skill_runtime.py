@@ -4,7 +4,7 @@ import unittest
 
 from evogrid.constants import Tile
 from evogrid.skills.context import SkillContext
-from evogrid.skills.runtime import SkillRuntime
+from evogrid.skills.runtime import SkillEpisodeState, SkillRuntime
 from evogrid.skills.schemas import SkillSpec
 
 
@@ -72,6 +72,44 @@ class SkillRuntimeTest(unittest.TestCase):
         result = SkillRuntime().execute(spec, _context(tile=int(Tile.BASE)))
 
         self.assertEqual(result.termination, "illegal_action")
+
+    def test_episode_use_limit_blocks_second_successful_action(self):
+        data = _skill_dict(status="verified")
+        data["budget"]["max_uses_per_episode"] = 1
+        spec = SkillSpec.from_dict(data)
+        episode_state = SkillEpisodeState()
+        runtime = SkillRuntime(
+            estimators={
+                "future_route_uses": lambda context, variables: 5,
+                "road_break_even_uses": lambda context, variables: 3,
+            }
+        )
+
+        first = runtime.execute(spec, _context(), episode_state=episode_state)
+        second = runtime.execute(spec, _context(), episode_state=episode_state)
+
+        self.assertEqual(first.chosen_action, "BUILD_ROAD")
+        self.assertEqual(second.termination, "episode_use_limit_reached")
+        self.assertIsNone(second.chosen_action)
+
+    def test_stop_after_success_blocks_later_invocations(self):
+        data = _skill_dict(status="verified")
+        data["budget"]["stop_after_success"] = True
+        spec = SkillSpec.from_dict(data)
+        episode_state = SkillEpisodeState()
+        runtime = SkillRuntime(
+            estimators={
+                "future_route_uses": lambda context, variables: 5,
+                "road_break_even_uses": lambda context, variables: 3,
+            }
+        )
+
+        first = runtime.execute(spec, _context(), episode_state=episode_state)
+        second = runtime.execute(spec, _context(), episode_state=episode_state)
+
+        self.assertEqual(first.chosen_action, "BUILD_ROAD")
+        self.assertEqual(second.termination, "episode_stop_after_success")
+        self.assertIsNone(second.chosen_action)
 
     def test_unknown_action_is_safe(self):
         data = _skill_dict(status="verified")

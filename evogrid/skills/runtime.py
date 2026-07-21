@@ -29,6 +29,26 @@ class SkillRuntimeResult:
         return self.termination == "completed"
 
 
+@dataclass
+class SkillEpisodeState:
+    """Mutable per-episode execution state shared across Skill invocations."""
+
+    use_counts: dict[str, int] = field(default_factory=dict)
+    stopped_skills: set[str] = field(default_factory=set)
+
+    def use_count(self, spec: SkillSpec) -> int:
+        return int(self.use_counts.get(_skill_key(spec), 0))
+
+    def is_stopped(self, spec: SkillSpec) -> bool:
+        return _skill_key(spec) in self.stopped_skills
+
+    def record_success(self, spec: SkillSpec, *, stop_after_success: bool = False) -> None:
+        key = _skill_key(spec)
+        self.use_counts[key] = int(self.use_counts.get(key, 0)) + 1
+        if stop_after_success:
+            self.stopped_skills.add(key)
+
+
 class SkillRuntime:
     def __init__(
         self,
@@ -49,6 +69,7 @@ class SkillRuntime:
         step: int = 0,
         allow_candidate: bool = False,
         max_nested_depth: int = 0,
+        episode_state: SkillEpisodeState | None = None,
         _call_stack: tuple[str, ...] = (),
     ) -> SkillRuntimeResult:
         if spec.spec_hash != compute_spec_hash(spec):
@@ -66,6 +87,11 @@ class SkillRuntime:
             return SkillRuntimeResult(None, trace.termination, trace)
         if not predicate.applicable:
             return self._result(spec, context, run_id, episode_id, step, False, "not_applicable")
+        if episode_state is not None and episode_state.is_stopped(spec):
+            return self._result(spec, context, run_id, episode_id, step, True, "episode_stop_after_success")
+        max_uses = int(spec.budget.get("max_uses_per_episode", 0) or 0)
+        if episode_state is not None and max_uses and episode_state.use_count(spec) >= max_uses:
+            return self._result(spec, context, run_id, episode_id, step, True, "episode_use_limit_reached")
 
         trace = self._trace(spec, context, run_id, episode_id, step, True)
         state = _RuntimeState(
@@ -80,11 +106,17 @@ class SkillRuntime:
             step=step,
             allow_candidate=allow_candidate,
             call_stack=(*_call_stack, _skill_key(spec)),
+            episode_state=episode_state,
         )
         try:
             action = self._execute_nodes(spec.procedure, context, trace, state, max_nested_depth)
             trace.chosen_action = action
             trace.termination = "completed" if action is not None else "completed_no_action"
+            if action is not None and episode_state is not None:
+                episode_state.record_success(
+                    spec,
+                    stop_after_success=bool(spec.budget.get("stop_after_success", False)),
+                )
         except RuntimeStop as stop:
             trace.termination = stop.termination
         return SkillRuntimeResult(trace.chosen_action, trace.termination, trace, dict(state.variables))
@@ -195,6 +227,7 @@ class SkillRuntime:
             step=state.step,
             allow_candidate=state.allow_candidate,
             max_nested_depth=nested_depth + 1,
+            episode_state=state.episode_state,
             _call_stack=state.call_stack,
         )
         trace.operations[-1]["child_trace"] = result.trace.to_dict()
@@ -247,6 +280,7 @@ class _RuntimeState:
     step: int
     allow_candidate: bool
     call_stack: tuple[str, ...]
+    episode_state: SkillEpisodeState | None
 
     def consume_operation(self) -> None:
         self.operations_used += 1

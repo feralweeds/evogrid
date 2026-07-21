@@ -6,7 +6,7 @@ from evogrid.agents.base_agent import BaseAgent
 from evogrid.constants import ACTION_NAMES, Action
 from evogrid.skills.context import SkillContext
 from evogrid.skills.registry import SkillRegistry
-from evogrid.skills.runtime import SkillRuntime
+from evogrid.skills.runtime import SkillEpisodeState, SkillRuntime
 from evogrid.skills.selector import SkillSelector
 
 
@@ -26,10 +26,12 @@ class SkillAgent(BaseAgent):
         self.selector = SkillSelector(allow_candidates=allow_candidates)
         self.allow_candidates = allow_candidates
         self.trace: list[dict] = []
+        self.episode_state = SkillEpisodeState()
 
     def reset(self, seed: int | None = None) -> None:
         self.fallback_agent.reset(seed)
         self.trace.clear()
+        self.episode_state = SkillEpisodeState()
 
     def act(self, obs: dict, info: dict) -> int:
         hints = self._context_hints(obs, info)
@@ -54,6 +56,7 @@ class SkillAgent(BaseAgent):
             context,
             allow_candidate=self.allow_candidates,
             step=int(obs.get("step", 0) or 0),
+            episode_state=self.episode_state,
         )
         self.trace.append({"source": "skill", "selection": selection.reason, "runtime": result.trace.to_dict()})
         if result.chosen_action is None:

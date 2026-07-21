@@ -76,6 +76,30 @@ class SkillSelectorTest(unittest.TestCase):
             self.assertEqual(action, int(Action.BUILD_ROAD))
             self.assertEqual(agent.trace[0]["source"], "skill")
 
+    def test_skill_agent_keeps_episode_use_limit_across_steps(self):
+        with tempfile.TemporaryDirectory() as temp:
+            registry = SkillRegistry(temp)
+            data = _skill_dict(status="verified")
+            data["budget"]["max_uses_per_episode"] = 1
+            spec = SkillSpec.from_dict(data)
+            registry._write_record("verified", SkillRecord(spec, "verified"))
+            runtime = SkillRuntime(
+                estimators={
+                    "future_route_uses": lambda context, variables: 5,
+                    "road_break_even_uses": lambda context, variables: 3,
+                }
+            )
+            agent = SkillAgent(registry, RandomAgent(actions=[int(Action.NOOP)]), runtime=runtime)
+
+            first = agent.act(_obs(), {"steps_remaining": 20, "route_plan": _route_plan()})
+            second_obs = {**_obs(), "step": 1}
+            second = agent.act(second_obs, {"steps_remaining": 19, "route_plan": _route_plan()})
+
+            self.assertEqual(first, int(Action.BUILD_ROAD))
+            self.assertEqual(second, int(Action.NOOP))
+            self.assertEqual(agent.trace[-2]["runtime"]["termination"], "episode_use_limit_reached")
+            self.assertEqual(agent.trace[-1]["source"], "fallback")
+
     def test_skill_agent_builds_context_from_route_fallback_hints(self):
         with tempfile.TemporaryDirectory() as temp:
             registry = SkillRegistry(temp)

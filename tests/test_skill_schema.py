@@ -136,6 +136,22 @@ class SkillSchemaTest(unittest.TestCase):
 
         self.assertTrue(spec.spec_hash)
 
+    def test_episode_budget_controls_are_validated(self):
+        data = _skill_dict()
+        data["budget"]["max_uses_per_episode"] = 1
+        data["budget"]["stop_after_success"] = True
+
+        spec = SkillSpec.from_dict(data)
+
+        self.assertEqual(spec.budget["max_uses_per_episode"], 1)
+
+    def test_stop_after_success_requires_boolean(self):
+        data = _skill_dict()
+        data["budget"]["stop_after_success"] = "true"
+
+        with self.assertRaisesRegex(ValueError, "stop_after_success"):
+            SkillSpec.from_dict(data)
+
 
 def _skill_dict(status: str = "candidate", description: str = "Build only where repeated transport can repay construction.") -> dict:
     return {
