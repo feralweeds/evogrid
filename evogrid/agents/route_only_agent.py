@@ -51,7 +51,7 @@ class RouteOnlyAgent(BaseAgent):
         )
         return {
             "memory_summary": _skill_memory_summary(self.memory, obs, opportunity),
-            "route_plan": _skill_route_summary(route_plan),
+            "route_plan": _skill_route_summary(route_plan, memory=self.memory, obs=obs),
             "fallback_action": int(action),
             "_fallback_route_plan": route_plan,
         }
@@ -442,12 +442,19 @@ def _route_trace(route_plan: RoutePlan | None) -> dict:
     }
 
 
-def _skill_route_summary(route_plan: RoutePlan | None) -> dict:
+def _skill_route_summary(
+    route_plan: RoutePlan | None,
+    *,
+    memory: AgentMemory | None = None,
+    obs: dict | None = None,
+    max_observed_tiles: int = 12,
+) -> dict:
     if route_plan is None:
         return {
             "exists": False,
             "is_known_transport_route": False,
             "remaining_length_bucket": "unknown",
+            "observed_tiles": [],
         }
     return {
         "exists": True,
@@ -456,6 +463,7 @@ def _skill_route_summary(route_plan: RoutePlan | None) -> dict:
         "target_pos": route_plan.target_pos,
         "next_pos": route_plan.next_pos,
         "planner_mode": route_plan.mode,
+        "observed_tiles": _route_observed_tiles(route_plan, memory, obs, max_observed_tiles),
     }
 
 
@@ -488,6 +496,39 @@ def _length_bucket(length: int) -> str:
     if length <= 10:
         return "medium"
     return "long"
+
+
+def _route_observed_tiles(
+    route_plan: RoutePlan,
+    memory: AgentMemory | None,
+    obs: dict | None,
+    max_items: int,
+) -> list[dict]:
+    if memory is None or obs is None or max_items <= 0:
+        return []
+    agent_pos = _position(obs["agent_pos"])
+    tiles: list[dict] = []
+    for route_order, raw_pos in enumerate(route_plan.path):
+        pos = _position(raw_pos)
+        if pos not in memory.seen_tiles:
+            continue
+        tile = int(memory.seen_tiles[pos])
+        tiles.append(
+            {
+                "pos": list(pos),
+                "tile_type": tile,
+                "tile_name": Tile(tile).name,
+                "terrain_band": memory.seen_terrain_bands.get(pos),
+                "has_road": tile == int(Tile.ROAD) or pos in memory.seen_roads or pos in memory.built_roads,
+                "visit_count_bucket": _visit_count_bucket(int(memory.visited_counts.get(pos, 0) or 0)),
+                "distance_from_agent": _manhattan(agent_pos, pos),
+                "route_order": route_order,
+                "source": "observed_memory_route",
+            }
+        )
+        if len(tiles) >= max_items:
+            break
+    return tiles
 
 
 def _position(value) -> Position:

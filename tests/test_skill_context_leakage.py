@@ -23,7 +23,18 @@ class SkillContextLeakageTest(unittest.TestCase):
                 "route_rough_tile_count": 8,
             },
             memory_summary={"static_diagnostics": {"largest_component_fraction": 1.0}},
-            route_plan={"exists": True, "hidden": {"ore_positions": [[7, 7]]}},
+            route_plan={
+                "exists": True,
+                "hidden": {"ore_positions": [[7, 7]]},
+                "observed_tiles": [
+                    {
+                        "pos": [1, 1],
+                        "tile_type": int(Tile.GROUND),
+                        "terrain_band": "NORMAL",
+                        "audit": {"minimum_cost_path_cost": 1.0},
+                    }
+                ],
+            },
             episode_budget={"steps_remaining": 5},
         )
 
@@ -31,6 +42,7 @@ class SkillContextLeakageTest(unittest.TestCase):
         self.assertNotIn("route_rough_tile_count", context.observable_info)
         self.assertNotIn("ore_positions", context.observable_info["map_summary"])
         self.assertNotIn("static_diagnostics", context.memory_summary)
+        self.assertNotIn("audit", context.route_plan["observed_tiles"][0])
 
     def test_hidden_feature_cannot_be_accessed_even_if_nested_input_attempts_it(self):
         context = SkillContext.from_observable_inputs(

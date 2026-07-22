@@ -111,6 +111,20 @@ class SkillRuntimeTest(unittest.TestCase):
         self.assertEqual(second.termination, "episode_stop_after_success")
         self.assertIsNone(second.chosen_action)
 
+    def test_episode_use_actions_limit_counts_only_matching_actions(self):
+        data = _child_move_skill_dict(status="verified")
+        data["budget"]["max_uses_per_episode"] = 1
+        data["budget"]["episode_use_actions"] = ["BUILD_ROAD"]
+        spec = SkillSpec.from_dict(data)
+        episode_state = SkillEpisodeState()
+        runtime = SkillRuntime()
+
+        first = runtime.execute(spec, _context(), episode_state=episode_state)
+        second = runtime.execute(spec, _context(), episode_state=episode_state)
+
+        self.assertEqual(first.chosen_action, "MOVE_RIGHT")
+        self.assertEqual(second.chosen_action, "MOVE_RIGHT")
+
     def test_unknown_action_is_safe(self):
         data = _skill_dict(status="verified")
         data["procedure"] = [{"op": "ACT", "action": "TELEPORT"}]
@@ -151,6 +165,177 @@ class SkillRuntimeTest(unittest.TestCase):
         self.assertEqual(result.variables["target"]["pos"], [2, 4])
         self.assertEqual(result.variables["route"]["actions"], ["MOVE_RIGHT", "MOVE_RIGHT"])
         self.assertEqual(result.trace.operations[0]["result"]["tile"], int(Tile.ORE))
+
+    def test_select_target_filters_and_ranks_route_observed_tiles(self):
+        data = _skill_dict(status="verified")
+        data["procedure"] = [
+            {
+                "op": "SELECT_TARGET",
+                "source": "route.observed_tiles",
+                "filters": [
+                    {"feature": "candidate.has_road", "op": "eq", "value": False},
+                    {"feature": "candidate.terrain_band", "op": "in", "value": ["ROUGH", "VERY_ROUGH"]},
+                ],
+                "rank_by": [
+                    {"feature": "candidate.route_order", "direction": "asc"},
+                    {"feature": "candidate.visit_count_bucket", "direction": "desc"},
+                ],
+                "select": "first",
+                "store_as": "target",
+            }
+        ]
+        spec = SkillSpec.from_dict(data)
+
+        result = SkillRuntime().execute(spec, _context_with_route_observed_tiles())
+
+        self.assertEqual(result.termination, "completed_no_action")
+        self.assertEqual(result.variables["target"]["pos"], [2, 3])
+        self.assertEqual(result.variables["target"]["route_order"], 1)
+        self.assertEqual(result.trace.operations[0]["candidate_count"], 4)
+        self.assertEqual(result.trace.operations[0]["filtered_count"], 2)
+        self.assertTrue(result.trace.operations[0]["selected_target_hash"])
+
+    def test_select_target_empty_route_candidates_returns_none_safely(self):
+        data = _skill_dict(status="verified")
+        data["procedure"] = [
+            {
+                "op": "SELECT_TARGET",
+                "source": "route.observed_tiles",
+                "filters": [{"feature": "candidate.terrain_band", "op": "eq", "value": "ROUGH"}],
+                "rank_by": [{"feature": "candidate.route_order", "direction": "asc"}],
+                "select": "first",
+                "store_as": "target",
+            }
+        ]
+        spec = SkillSpec.from_dict(data)
+
+        result = SkillRuntime().execute(spec, _context_with_route_observed_tiles(observed_tiles=[]))
+
+        self.assertEqual(result.termination, "completed_no_action")
+        self.assertIsNone(result.variables["target"])
+        self.assertEqual(result.trace.operations[0]["candidate_count"], 0)
+        self.assertEqual(result.trace.operations[0]["filtered_count"], 0)
+        self.assertIsNone(result.trace.operations[0]["selected_target_hash"])
+
+    def test_select_target_filter_treats_missing_candidate_feature_as_non_match(self):
+        data = _skill_dict(status="verified")
+        data["procedure"] = [
+            {
+                "op": "SELECT_TARGET",
+                "source": "route.observed_tiles",
+                "filters": [{"feature": "candidate.terrain_band", "op": "eq", "value": "ROUGH"}],
+                "rank_by": [{"feature": "candidate.route_order", "direction": "asc"}],
+                "select": "first",
+                "store_as": "target",
+            }
+        ]
+        spec = SkillSpec.from_dict(data)
+
+        result = SkillRuntime().execute(
+            spec,
+            _context_with_route_observed_tiles(
+                observed_tiles=[
+                    {
+                        "pos": [2, 3],
+                        "tile_type": int(Tile.ROUGH),
+                        "has_road": False,
+                        "visit_count_bucket": "medium",
+                        "distance_from_agent": 1,
+                        "route_order": 1,
+                    }
+                ]
+            ),
+        )
+
+        self.assertEqual(result.termination, "completed_no_action")
+        self.assertIsNone(result.variables["target"])
+        self.assertEqual(result.trace.operations[0]["candidate_count"], 1)
+        self.assertEqual(result.trace.operations[0]["filtered_count"], 0)
+
+    def test_select_target_can_reuse_episode_locked_target(self):
+        data = _skill_dict(status="verified")
+        data["procedure"] = [
+            {
+                "op": "SELECT_TARGET",
+                "source": "route.observed_tiles",
+                "filters": [{"feature": "candidate.terrain_band", "op": "in", "value": ["ROUGH", "VERY_ROUGH"]}],
+                "rank_by": [{"feature": "candidate.route_order", "direction": "asc"}],
+                "select": "first",
+                "store_as": "target",
+                "episode_store_as": "road_target",
+            }
+        ]
+        spec = SkillSpec.from_dict(data)
+        episode_state = SkillEpisodeState()
+
+        first = SkillRuntime().execute(spec, _context_with_route_observed_tiles(), episode_state=episode_state)
+        second = SkillRuntime().execute(
+            spec,
+            _context_with_route_observed_tiles(
+                observed_tiles=[
+                    {
+                        "pos": [2, 5],
+                        "tile_type": int(Tile.ROUGH),
+                        "tile_name": "ROUGH",
+                        "terrain_band": "VERY_ROUGH",
+                        "has_road": False,
+                        "visit_count_bucket": "high",
+                        "distance_from_agent": 3,
+                        "route_order": 0,
+                    }
+                ]
+            ),
+            episode_state=episode_state,
+        )
+        fresh = SkillRuntime().execute(
+            spec,
+            _context_with_route_observed_tiles(
+                observed_tiles=[
+                    {
+                        "pos": [2, 5],
+                        "tile_type": int(Tile.ROUGH),
+                        "tile_name": "ROUGH",
+                        "terrain_band": "VERY_ROUGH",
+                        "has_road": False,
+                        "visit_count_bucket": "high",
+                        "distance_from_agent": 3,
+                        "route_order": 0,
+                    }
+                ]
+            ),
+            episode_state=SkillEpisodeState(),
+        )
+
+        self.assertEqual(first.variables["target"]["pos"], [2, 3])
+        self.assertEqual(second.variables["target"]["pos"], [2, 3])
+        self.assertTrue(second.trace.operations[0]["episode_target_reused"])
+        self.assertEqual(fresh.variables["target"]["pos"], [2, 5])
+
+    def test_select_target_does_not_lock_missing_episode_target(self):
+        data = _skill_dict(status="verified")
+        data["procedure"] = [
+            {
+                "op": "SELECT_TARGET",
+                "source": "route.observed_tiles",
+                "filters": [
+                    {"feature": "candidate.has_road", "op": "eq", "value": False},
+                    {"feature": "candidate.terrain_band", "op": "eq", "value": "VERY_ROUGH"},
+                ],
+                "rank_by": [{"feature": "candidate.route_order", "direction": "asc"}],
+                "select": "first",
+                "store_as": "target",
+                "episode_store_as": "road_target",
+            }
+        ]
+        spec = SkillSpec.from_dict(data)
+        episode_state = SkillEpisodeState()
+
+        first = SkillRuntime().execute(spec, _context_with_route_observed_tiles(observed_tiles=[]), episode_state=episode_state)
+        second = SkillRuntime().execute(spec, _context_with_route_observed_tiles(), episode_state=episode_state)
+
+        self.assertIsNone(first.variables["target"])
+        self.assertEqual(second.variables["target"]["pos"], [2, 5])
+        self.assertFalse(second.trace.operations[0]["episode_target_reused"])
 
     def test_plan_route_requires_unknown_cell_policy(self):
         data = _route_skill_dict(status="verified")
@@ -228,6 +413,68 @@ def _context_with_visible_ore() -> SkillContext:
         info={},
         memory_summary={"similar_mean_payoff": 0.2, "similar_outcome_count": 3, "visit_count_bucket": "medium"},
         route_plan={"exists": True, "is_known_transport_route": True, "remaining_length_bucket": "short"},
+        episode_budget={"steps_remaining": 20},
+    )
+
+
+def _context_with_route_observed_tiles(observed_tiles: list[dict] | None = None) -> SkillContext:
+    if observed_tiles is None:
+        observed_tiles = [
+            {
+                "pos": [2, 2],
+                "tile_type": int(Tile.GROUND),
+                "tile_name": "GROUND",
+                "terrain_band": "SMOOTH",
+                "has_road": False,
+                "visit_count_bucket": "low",
+                "distance_from_agent": 0,
+                "route_order": 0,
+            },
+            {
+                "pos": [2, 3],
+                "tile_type": int(Tile.ROUGH),
+                "tile_name": "ROUGH",
+                "terrain_band": "ROUGH",
+                "has_road": False,
+                "visit_count_bucket": "medium",
+                "distance_from_agent": 1,
+                "route_order": 1,
+            },
+            {
+                "pos": [2, 4],
+                "tile_type": int(Tile.ROAD),
+                "tile_name": "ROAD",
+                "terrain_band": "VERY_ROUGH",
+                "has_road": True,
+                "visit_count_bucket": "high",
+                "distance_from_agent": 2,
+                "route_order": 2,
+            },
+            {
+                "pos": [2, 5],
+                "tile_type": int(Tile.ROUGH),
+                "tile_name": "ROUGH",
+                "terrain_band": "VERY_ROUGH",
+                "has_road": False,
+                "visit_count_bucket": "high",
+                "distance_from_agent": 3,
+                "route_order": 3,
+            },
+        ]
+    return SkillContext.from_observable_inputs(
+        observation={
+            "agent_pos": [2, 2],
+            "has_ore": False,
+            "visible_tiles": [{"pos": [2, 2], "tile": int(Tile.GROUND), "terrain_band": "ROUGH"}],
+        },
+        info={},
+        memory_summary={"similar_mean_payoff": 0.2, "similar_outcome_count": 3, "visit_count_bucket": "medium"},
+        route_plan={
+            "exists": True,
+            "is_known_transport_route": True,
+            "remaining_length_bucket": "medium",
+            "observed_tiles": observed_tiles,
+        },
         episode_budget={"steps_remaining": 20},
     )
 

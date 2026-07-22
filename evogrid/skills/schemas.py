@@ -48,6 +48,20 @@ PROCEDURE_OPS = {
     "CALL_SKILL",
     "RETURN",
 }
+SELECT_TARGET_SOURCES = {"visible_tiles", "memory", "variable", "route.observed_tiles"}
+CANDIDATE_BOOLEAN_FEATURES = {"candidate.has_road"}
+CANDIDATE_NUMERIC_FEATURES = {"candidate.tile_type", "candidate.distance_from_agent", "candidate.route_order"}
+CANDIDATE_ENUM_FEATURE_VALUES = {
+    "candidate.terrain_band": {"SMOOTH", "NORMAL", "ROUGH", "VERY_ROUGH"},
+    "candidate.visit_count_bucket": {"low", "medium", "high"},
+    "candidate.tile_name": {"GROUND", "ORE", "OBSTACLE", "ROUGH", "ROAD", "BASE"},
+    "candidate.source": {"observed_memory_route"},
+}
+CANDIDATE_FEATURES = (
+    CANDIDATE_BOOLEAN_FEATURES
+    | CANDIDATE_NUMERIC_FEATURES
+    | set(CANDIDATE_ENUM_FEATURE_VALUES)
+)
 TEXT_KEYS_FORBIDDEN_IN_PROCEDURE = {"description", "rationale", "instruction", "prompt", "natural_language"}
 LEGAL_TRANSITIONS = {
     "proposed": {"candidate"},
@@ -426,9 +440,72 @@ def _validate_procedure_node(node: dict[str, Any]) -> None:
             raise ValueError("procedure.ACT.action: required")
         if str(node["action"]) not in ACTION_NAMES:
             raise ValueError("procedure.ACT.action: unknown primitive action")
+    elif op == "SELECT_TARGET":
+        _validate_select_target_node(node)
     elif op == "CALL_SKILL":
         if "skill_id" not in node:
             raise ValueError("procedure.CALL_SKILL.skill_id: required")
+
+
+def _validate_select_target_node(node: dict[str, Any]) -> None:
+    source = str(node.get("source", "visible_tiles"))
+    if source not in SELECT_TARGET_SOURCES:
+        raise ValueError("procedure.SELECT_TARGET.source: not allowed")
+    if "filters" in node:
+        filters = node["filters"]
+        if not isinstance(filters, list):
+            raise ValueError("procedure.SELECT_TARGET.filters: expected list")
+        for filter_node in filters:
+            _validate_candidate_filter(_dict(filter_node, "procedure.SELECT_TARGET.filters[]"))
+    if "rank_by" in node:
+        rank_by = node["rank_by"]
+        if not isinstance(rank_by, list) or not rank_by:
+            raise ValueError("procedure.SELECT_TARGET.rank_by: expected non-empty list")
+        for rule in rank_by:
+            rule = _dict(rule, "procedure.SELECT_TARGET.rank_by[]")
+            feature = str(rule.get("feature"))
+            if feature not in CANDIDATE_FEATURES:
+                raise ValueError(f"procedure.SELECT_TARGET.rank_by.feature: not allowed: {feature}")
+            if str(rule.get("direction", "asc")) not in {"asc", "desc"}:
+                raise ValueError("procedure.SELECT_TARGET.rank_by.direction: expected asc or desc")
+    if "select" in node and str(node["select"]) != "first":
+        raise ValueError("procedure.SELECT_TARGET.select: only first is supported")
+    if "episode_store_as" in node:
+        _identifier(node["episode_store_as"], "procedure.SELECT_TARGET.episode_store_as")
+
+
+def _validate_candidate_filter(node: dict[str, Any]) -> None:
+    feature = str(node.get("feature"))
+    if feature not in CANDIDATE_FEATURES:
+        raise ValueError(f"procedure.SELECT_TARGET.filters.feature: not allowed: {feature}")
+    op = str(node.get("op"))
+    if op not in ALLOWED_OPS:
+        raise ValueError(f"procedure.SELECT_TARGET.filters.op: not allowed: {op}")
+    if "value" not in node:
+        raise ValueError("procedure.SELECT_TARGET.filters.value: required")
+    _validate_candidate_filter_value(feature, op, node["value"])
+
+
+def _validate_candidate_filter_value(feature: str, op: str, value: Any) -> None:
+    if feature in CANDIDATE_BOOLEAN_FEATURES:
+        if op not in {"eq", "ne"} or not isinstance(value, bool):
+            raise ValueError(f"procedure.SELECT_TARGET.filters.value: {feature} requires boolean eq/ne")
+        return
+    if feature in CANDIDATE_ENUM_FEATURE_VALUES:
+        if op not in {"eq", "ne", "in", "not_in"}:
+            raise ValueError(f"procedure.SELECT_TARGET.filters.op: {feature} supports only enum equality ops")
+        allowed = CANDIDATE_ENUM_FEATURE_VALUES[feature]
+        values = value if op in {"in", "not_in"} else [value]
+        if not isinstance(values, list) or any(str(item) not in allowed for item in values):
+            raise ValueError(f"procedure.SELECT_TARGET.filters.value: {feature} expected one of {sorted(allowed)}")
+        return
+    if feature in CANDIDATE_NUMERIC_FEATURES:
+        values = value if op in {"in", "not_in"} else [value]
+        if not isinstance(values, list) or any(
+            isinstance(item, bool) or not isinstance(item, (int, float)) for item in values
+        ):
+            raise ValueError(f"procedure.SELECT_TARGET.filters.value: {feature} requires numeric value")
+        return
 
 
 def _validate_budget(budget: dict[str, Any]) -> None:
@@ -437,6 +514,10 @@ def _validate_budget(budget: dict[str, Any]) -> None:
             raise ValueError(f"budget.{key}: expected non-negative")
     if "stop_after_success" in budget and not isinstance(budget["stop_after_success"], bool):
         raise ValueError("budget.stop_after_success: expected boolean")
+    if "episode_use_actions" in budget:
+        actions = budget["episode_use_actions"]
+        if not isinstance(actions, list) or any(str(action) not in ACTION_NAMES for action in actions):
+            raise ValueError("budget.episode_use_actions: expected list of primitive action names")
 
 
 def _validate_objective(objective: dict[str, Any]) -> None:

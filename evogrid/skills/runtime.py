@@ -35,6 +35,7 @@ class SkillEpisodeState:
 
     use_counts: dict[str, int] = field(default_factory=dict)
     stopped_skills: set[str] = field(default_factory=set)
+    targets: dict[str, dict[str, Any] | None] = field(default_factory=dict)
 
     def use_count(self, spec: SkillSpec) -> int:
         return int(self.use_counts.get(_skill_key(spec), 0))
@@ -47,6 +48,31 @@ class SkillEpisodeState:
         self.use_counts[key] = int(self.use_counts.get(key, 0)) + 1
         if stop_after_success:
             self.stopped_skills.add(key)
+
+    def target_for(self, key: str) -> dict[str, Any] | None:
+        return self.targets.get(key)
+
+    def has_target(self, key: str) -> bool:
+        return key in self.targets
+
+    def record_target(self, key: str, target: dict[str, Any] | None) -> None:
+        self.targets[key] = target
+
+
+@dataclass(frozen=True)
+class _TargetSelection:
+    target: dict[str, Any] | None
+    candidate_count: int
+    filtered_count: int
+    episode_target_reused: bool = False
+
+    @property
+    def selected_target_hash(self) -> str | None:
+        if self.target is None:
+            return None
+        import hashlib
+
+        return hashlib.sha256(canonical_json(self.target).encode("utf-8")).hexdigest()
 
 
 class SkillRuntime:
@@ -112,7 +138,7 @@ class SkillRuntime:
             action = self._execute_nodes(spec.procedure, context, trace, state, max_nested_depth)
             trace.chosen_action = action
             trace.termination = "completed" if action is not None else "completed_no_action"
-            if action is not None and episode_state is not None:
+            if action is not None and episode_state is not None and _counts_toward_episode_use(spec, action):
                 episode_state.record_success(
                     spec,
                     stop_after_success=bool(spec.budget.get("stop_after_success", False)),
@@ -171,9 +197,13 @@ class SkillRuntime:
             trace.termination = "returned"
             return None
         if op == "SELECT_TARGET":
-            target = _select_target(node, context, state.variables)
-            state.variables[str(node.get("store_as", "target"))] = target
-            trace.operations[-1]["result"] = target
+            selection = _select_target(node, context, state.variables, state.episode_state)
+            state.variables[str(node.get("store_as", "target"))] = selection.target
+            trace.operations[-1]["candidate_count"] = selection.candidate_count
+            trace.operations[-1]["filtered_count"] = selection.filtered_count
+            trace.operations[-1]["selected_target_hash"] = selection.selected_target_hash
+            trace.operations[-1]["episode_target_reused"] = selection.episode_target_reused
+            trace.operations[-1]["result"] = selection.target
             return None
         if op == "PLAN_ROUTE":
             route = _plan_route(node, context, state.variables)
@@ -327,7 +357,23 @@ def _value(node: Any, variables: dict[str, Any]) -> Any:
     return node
 
 
-def _select_target(node: dict[str, Any], context: SkillContext, variables: dict[str, Any]) -> dict[str, Any]:
+def _select_target(
+    node: dict[str, Any],
+    context: SkillContext,
+    variables: dict[str, Any],
+    episode_state: SkillEpisodeState | None = None,
+) -> _TargetSelection:
+    episode_store_as = node.get("episode_store_as")
+    if episode_state is not None and episode_store_as is not None:
+        episode_key = str(episode_store_as)
+        if episode_state.has_target(episode_key):
+            return _TargetSelection(
+                episode_state.target_for(episode_key),
+                candidate_count=0,
+                filtered_count=0,
+                episode_target_reused=True,
+            )
+
     source = str(node.get("source", "visible_tiles"))
     strategy = str(node.get("strategy", "nearest"))
     if source == "memory":
@@ -335,29 +381,80 @@ def _select_target(node: dict[str, Any], context: SkillContext, variables: dict[
         candidates = context.memory_summary.get(memory_key, [])
     elif source == "variable":
         candidates = _value({"var": str(node.get("var"))}, variables)
-    else:
+    elif source == "visible_tiles":
         candidates = context.observation.get("visible_tiles", [])
+    elif source == "route.observed_tiles":
+        candidates = (context.route_plan or {}).get("observed_tiles", [])
+    else:
+        raise RuntimeStop("unknown_target_source")
     if not isinstance(candidates, list):
         raise RuntimeStop("target_source_not_list")
+    candidate_count = len(candidates)
     filtered = [_normalize_target(item) for item in candidates if _target_matches(item, node)]
+    if node.get("filters") is not None:
+        filtered = [item for item in filtered if _candidate_filters_match(item, node.get("filters"))]
+    filtered_count = len(filtered)
     if not filtered:
         if "default" in node:
-            return _normalize_target(node["default"])
+            selection = _TargetSelection(_normalize_target(node["default"]), candidate_count, filtered_count)
+            _record_episode_target(node, episode_state, selection.target)
+            return selection
+        if source == "route.observed_tiles" or node.get("filters") is not None or node.get("rank_by") is not None:
+            selection = _TargetSelection(None, candidate_count, filtered_count)
+            _record_episode_target(node, episode_state, selection.target)
+            return selection
         raise RuntimeStop("target_not_found")
+    if node.get("rank_by") is not None:
+        selected = _select_ranked_target(filtered, node)
+        selection = _TargetSelection(selected, candidate_count, filtered_count)
+        _record_episode_target(node, episode_state, selection.target)
+        return selection
     agent_pos = _position(context.observation.get("agent_pos"))
     if strategy == "first":
-        return filtered[0]
+        selection = _TargetSelection(filtered[0], candidate_count, filtered_count)
+        _record_episode_target(node, episode_state, selection.target)
+        return selection
     if strategy == "farthest":
-        return max(filtered, key=lambda item: _manhattan(agent_pos, _position(item.get("pos"))))
+        selection = _TargetSelection(
+            max(filtered, key=lambda item: _manhattan(agent_pos, _position(item.get("pos")))),
+            candidate_count,
+            filtered_count,
+        )
+        _record_episode_target(node, episode_state, selection.target)
+        return selection
     if strategy == "nearest":
-        return min(filtered, key=lambda item: _manhattan(agent_pos, _position(item.get("pos"))))
+        selection = _TargetSelection(
+            min(filtered, key=lambda item: _manhattan(agent_pos, _position(item.get("pos")))),
+            candidate_count,
+            filtered_count,
+        )
+        _record_episode_target(node, episode_state, selection.target)
+        return selection
     raise RuntimeStop("unknown_target_strategy")
+
+
+def _record_episode_target(
+    node: dict[str, Any],
+    episode_state: SkillEpisodeState | None,
+    target: dict[str, Any] | None,
+) -> None:
+    if episode_state is None or node.get("episode_store_as") is None or target is None:
+        return
+    episode_state.record_target(str(node["episode_store_as"]), target)
+
+
+def _counts_toward_episode_use(spec: SkillSpec, action: str) -> bool:
+    episode_use_actions = spec.budget.get("episode_use_actions")
+    if episode_use_actions is None:
+        return True
+    return action in set(str(item) for item in episode_use_actions)
 
 
 def _target_matches(item: Any, node: dict[str, Any]) -> bool:
     if not isinstance(item, dict):
         return False
-    if "tile_types" in node and item.get("tile") not in node["tile_types"]:
+    tile = item.get("tile", item.get("tile_type"))
+    if "tile_types" in node and tile not in node["tile_types"]:
         return False
     if "terrain_bands" in node and item.get("terrain_band") not in node["terrain_bands"]:
         return False
@@ -372,9 +469,133 @@ def _normalize_target(item: Any) -> dict[str, Any]:
     if not isinstance(item, dict):
         raise RuntimeStop("invalid_target")
     pos = _position(item.get("pos"))
-    target = {key: value for key, value in item.items() if key in {"tile", "terrain_band", "tags", "score"}}
+    allowed_keys = {
+        "tile",
+        "tile_type",
+        "tile_name",
+        "terrain_band",
+        "tags",
+        "score",
+        "has_road",
+        "visit_count_bucket",
+        "distance_from_agent",
+        "route_order",
+        "source",
+    }
+    target = {key: value for key, value in item.items() if key in allowed_keys}
+    if "tile" in target and "tile_type" not in target:
+        target["tile_type"] = target["tile"]
     target["pos"] = list(pos)
     return target
+
+
+def _candidate_filters_match(item: dict[str, Any], filters: Any) -> bool:
+    if not isinstance(filters, list):
+        raise RuntimeStop("invalid_target_filters")
+    return all(_candidate_filter_match(item, filter_node) for filter_node in filters)
+
+
+def _candidate_filter_match(item: dict[str, Any], filter_node: Any) -> bool:
+    if not isinstance(filter_node, dict):
+        raise RuntimeStop("invalid_target_filter")
+    feature = str(filter_node.get("feature"))
+    if not feature.startswith("candidate."):
+        raise RuntimeStop("invalid_candidate_feature")
+    op = str(filter_node.get("op"))
+    if "value" not in filter_node:
+        raise RuntimeStop("missing_candidate_filter_value")
+    try:
+        actual = _candidate_feature_value(item, feature)
+    except RuntimeStop as exc:
+        if exc.termination == "missing_candidate_feature":
+            return False
+        raise
+    return _compare_value(actual, op, filter_node["value"])
+
+
+def _compare_value(actual: Any, op: str, expected: Any) -> bool:
+    if op == "eq":
+        return actual == expected
+    if op == "ne":
+        return actual != expected
+    if op == "lt":
+        return actual < expected
+    if op == "lte":
+        return actual <= expected
+    if op == "gt":
+        return actual > expected
+    if op == "gte":
+        return actual >= expected
+    if op == "in":
+        return actual in expected
+    if op == "not_in":
+        return actual not in expected
+    raise RuntimeStop("invalid_candidate_filter_op")
+
+
+def _select_ranked_target(candidates: list[dict[str, Any]], node: dict[str, Any]) -> dict[str, Any]:
+    rank_by = node.get("rank_by")
+    if not isinstance(rank_by, list) or not rank_by:
+        raise RuntimeStop("invalid_rank_by")
+    select = str(node.get("select", "first"))
+    if select != "first":
+        raise RuntimeStop("unknown_target_select")
+
+    def sort_key(indexed_item: tuple[int, dict[str, Any]]) -> tuple:
+        index, item = indexed_item
+        keys = []
+        for rule in rank_by:
+            if not isinstance(rule, dict):
+                raise RuntimeStop("invalid_rank_rule")
+            value = _candidate_feature_value(item, str(rule.get("feature")))
+            direction = str(rule.get("direction", "asc"))
+            if direction not in {"asc", "desc"}:
+                raise RuntimeStop("invalid_rank_direction")
+            keys.append(_rank_sort_value(value, direction))
+        keys.append(index)
+        return tuple(keys)
+
+    return sorted(enumerate(candidates), key=sort_key)[0][1]
+
+
+def _candidate_feature_value(item: dict[str, Any], feature: str) -> Any:
+    key = feature.removeprefix("candidate.")
+    if key not in {
+        "tile_type",
+        "tile_name",
+        "terrain_band",
+        "has_road",
+        "visit_count_bucket",
+        "distance_from_agent",
+        "route_order",
+        "source",
+    }:
+        raise RuntimeStop("invalid_candidate_feature")
+    if key not in item or item[key] is None:
+        raise RuntimeStop("missing_candidate_feature")
+    return item[key]
+
+
+def _rank_sort_value(value: Any, direction: str) -> Any:
+    if isinstance(value, bool):
+        numeric = int(value)
+        return numeric if direction == "asc" else -numeric
+    if isinstance(value, (int, float)):
+        return value if direction == "asc" else -value
+    if isinstance(value, str) and value in {"low", "medium", "high"}:
+        order = {"low": 0, "medium": 1, "high": 2}[value]
+        return order if direction == "asc" else -order
+    return value if direction == "asc" else _DescendingString(str(value))
+
+
+@dataclass(frozen=True)
+class _DescendingString:
+    value: str
+
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, _DescendingString):
+            return NotImplemented
+        return self.value > other.value
 
 
 def _plan_route(node: dict[str, Any], context: SkillContext, variables: dict[str, Any]) -> dict[str, Any]:

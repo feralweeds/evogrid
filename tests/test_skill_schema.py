@@ -140,16 +140,91 @@ class SkillSchemaTest(unittest.TestCase):
         data = _skill_dict()
         data["budget"]["max_uses_per_episode"] = 1
         data["budget"]["stop_after_success"] = True
+        data["budget"]["episode_use_actions"] = ["BUILD_ROAD"]
 
         spec = SkillSpec.from_dict(data)
 
         self.assertEqual(spec.budget["max_uses_per_episode"], 1)
+
+    def test_episode_use_actions_requires_primitive_action_names(self):
+        data = _skill_dict()
+        data["budget"]["episode_use_actions"] = ["BUILD_CASTLE"]
+
+        with self.assertRaisesRegex(ValueError, "episode_use_actions"):
+            SkillSpec.from_dict(data)
 
     def test_stop_after_success_requires_boolean(self):
         data = _skill_dict()
         data["budget"]["stop_after_success"] = "true"
 
         with self.assertRaisesRegex(ValueError, "stop_after_success"):
+            SkillSpec.from_dict(data)
+
+    def test_select_target_accepts_route_observed_tiles_filters_and_rank(self):
+        data = _skill_dict()
+        data["procedure"] = [
+            {
+                "op": "SELECT_TARGET",
+                "source": "route.observed_tiles",
+                "filters": [
+                    {"feature": "candidate.has_road", "op": "eq", "value": False},
+                    {"feature": "candidate.terrain_band", "op": "in", "value": ["ROUGH", "VERY_ROUGH"]},
+                ],
+                "rank_by": [{"feature": "candidate.route_order", "direction": "asc"}],
+                "select": "first",
+                "store_as": "target",
+                "episode_store_as": "road_target",
+            }
+        ]
+
+        spec = SkillSpec.from_dict(data)
+
+        self.assertEqual(spec.procedure[0]["source"], "route.observed_tiles")
+
+    def test_select_target_rejects_unknown_source(self):
+        data = _skill_dict()
+        data["procedure"] = [{"op": "SELECT_TARGET", "source": "hidden_map"}]
+
+        with self.assertRaisesRegex(ValueError, "source"):
+            SkillSpec.from_dict(data)
+
+    def test_select_target_rejects_unknown_candidate_feature(self):
+        data = _skill_dict()
+        data["procedure"] = [
+            {
+                "op": "SELECT_TARGET",
+                "source": "route.observed_tiles",
+                "filters": [{"feature": "candidate.oracle_payoff", "op": "gt", "value": 0}],
+            }
+        ]
+
+        with self.assertRaisesRegex(ValueError, "filters.feature"):
+            SkillSpec.from_dict(data)
+
+    def test_select_target_rejects_bad_rank_direction(self):
+        data = _skill_dict()
+        data["procedure"] = [
+            {
+                "op": "SELECT_TARGET",
+                "source": "route.observed_tiles",
+                "rank_by": [{"feature": "candidate.route_order", "direction": "sideways"}],
+            }
+        ]
+
+        with self.assertRaisesRegex(ValueError, "rank_by.direction"):
+            SkillSpec.from_dict(data)
+
+    def test_select_target_rejects_bad_episode_store_name(self):
+        data = _skill_dict()
+        data["procedure"] = [
+            {
+                "op": "SELECT_TARGET",
+                "source": "route.observed_tiles",
+                "episode_store_as": "bad name",
+            }
+        ]
+
+        with self.assertRaisesRegex(ValueError, "episode_store_as"):
             SkillSpec.from_dict(data)
 
 
