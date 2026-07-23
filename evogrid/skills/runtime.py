@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from evogrid.constants import ACTION_NAMES
+from evogrid.constants import ACTION_NAMES, Action, MOVE_DELTAS, Tile
 from evogrid.skills.context import SkillContext
 from evogrid.skills.predicates import evaluate_predicate
 from evogrid.skills.schemas import SkillSpec, canonical_json, compute_spec_hash
@@ -36,6 +36,12 @@ class SkillEpisodeState:
     use_counts: dict[str, int] = field(default_factory=dict)
     stopped_skills: set[str] = field(default_factory=set)
     targets: dict[str, dict[str, Any] | None] = field(default_factory=dict)
+    blocked_target_hashes: dict[str, set[str]] = field(default_factory=dict)
+    consecutive_interventions: dict[str, int] = field(default_factory=dict)
+    last_positions: dict[str, list[int]] = field(default_factory=dict)
+    last_actions: dict[str, str] = field(default_factory=dict)
+    last_target_keys: dict[str, str] = field(default_factory=dict)
+    last_targets: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def use_count(self, spec: SkillSpec) -> int:
         return int(self.use_counts.get(_skill_key(spec), 0))
@@ -46,6 +52,7 @@ class SkillEpisodeState:
     def record_success(self, spec: SkillSpec, *, stop_after_success: bool = False) -> None:
         key = _skill_key(spec)
         self.use_counts[key] = int(self.use_counts.get(key, 0)) + 1
+        self.clear_intervention(spec)
         if stop_after_success:
             self.stopped_skills.add(key)
 
@@ -57,6 +64,65 @@ class SkillEpisodeState:
 
     def record_target(self, key: str, target: dict[str, Any] | None) -> None:
         self.targets[key] = target
+
+    def clear_target(self, key: str) -> None:
+        self.targets.pop(key, None)
+
+    def target_blocked(self, key: str, target: dict[str, Any] | None) -> bool:
+        if target is None:
+            return False
+        return _target_hash(target) in self.blocked_target_hashes.get(key, set())
+
+    def block_target(self, key: str, target: dict[str, Any] | None) -> None:
+        if target is None:
+            return
+        self.blocked_target_hashes.setdefault(key, set()).add(_target_hash(target))
+        if self.target_for(key) == target:
+            self.clear_target(key)
+
+    def consecutive_intervention_count(self, spec: SkillSpec) -> int:
+        return int(self.consecutive_interventions.get(_skill_key(spec), 0))
+
+    def record_intervention(
+        self,
+        spec: SkillSpec,
+        context: SkillContext,
+        action: str,
+        *,
+        target_key: str | None = None,
+        target: dict[str, Any] | None = None,
+    ) -> None:
+        key = _skill_key(spec)
+        self.consecutive_interventions[key] = int(self.consecutive_interventions.get(key, 0)) + 1
+        self.last_positions[key] = list(_position(context.observation.get("agent_pos")))
+        self.last_actions[key] = action
+        if target_key is not None:
+            self.last_target_keys[key] = target_key
+        if target is not None:
+            self.last_targets[key] = dict(target)
+
+    def clear_intervention(self, spec: SkillSpec) -> None:
+        key = _skill_key(spec)
+        self.consecutive_interventions.pop(key, None)
+        self.last_positions.pop(key, None)
+        self.last_actions.pop(key, None)
+        self.last_target_keys.pop(key, None)
+        self.last_targets.pop(key, None)
+
+    def movement_made_no_progress(self, spec: SkillSpec, context: SkillContext) -> bool:
+        key = _skill_key(spec)
+        if self.last_actions.get(key) not in _MOVEMENT_ACTIONS:
+            return False
+        if key not in self.last_positions:
+            return False
+        return self.last_positions[key] == list(_position(context.observation.get("agent_pos")))
+
+    def record_no_progress(self, spec: SkillSpec) -> None:
+        key = _skill_key(spec)
+        target_key = self.last_target_keys.get(key)
+        if target_key is not None:
+            self.block_target(target_key, self.last_targets.get(key))
+        self.clear_intervention(spec)
 
 
 @dataclass(frozen=True)
@@ -118,6 +184,17 @@ class SkillRuntime:
         max_uses = int(spec.budget.get("max_uses_per_episode", 0) or 0)
         if episode_state is not None and max_uses and episode_state.use_count(spec) >= max_uses:
             return self._result(spec, context, run_id, episode_id, step, True, "episode_use_limit_reached")
+        if episode_state is not None and episode_state.movement_made_no_progress(spec, context):
+            episode_state.record_no_progress(spec)
+            return self._result(spec, context, run_id, episode_id, step, True, "no_progress_detected")
+        max_interventions = int(spec.budget.get("max_consecutive_interventions", _DEFAULT_MAX_CONSECUTIVE_INTERVENTIONS) or 0)
+        if (
+            episode_state is not None
+            and max_interventions
+            and episode_state.consecutive_intervention_count(spec) >= max_interventions
+        ):
+            episode_state.clear_intervention(spec)
+            return self._result(spec, context, run_id, episode_id, step, True, "episode_intervention_limit_reached")
 
         trace = self._trace(spec, context, run_id, episode_id, step, True)
         state = _RuntimeState(
@@ -143,8 +220,22 @@ class SkillRuntime:
                     spec,
                     stop_after_success=bool(spec.budget.get("stop_after_success", False)),
                 )
+            elif action is not None and episode_state is not None:
+                episode_state.record_intervention(
+                    spec,
+                    context,
+                    action,
+                    target_key=state.current_episode_target_key,
+                    target=state.current_episode_target,
+                )
+            elif episode_state is not None:
+                episode_state.clear_intervention(spec)
         except RuntimeStop as stop:
             trace.termination = stop.termination
+            if episode_state is not None:
+                if stop.termination in {"illegal_action", "no_progress_detected"} and state.current_episode_target_key is not None:
+                    episode_state.block_target(state.current_episode_target_key, state.current_episode_target)
+                episode_state.clear_intervention(spec)
         return SkillRuntimeResult(trace.chosen_action, trace.termination, trace, dict(state.variables))
 
     def _execute_nodes(
@@ -199,6 +290,9 @@ class SkillRuntime:
         if op == "SELECT_TARGET":
             selection = _select_target(node, context, state.variables, state.episode_state)
             state.variables[str(node.get("store_as", "target"))] = selection.target
+            if node.get("episode_store_as") is not None:
+                state.current_episode_target_key = str(node["episode_store_as"])
+                state.current_episode_target = selection.target
             trace.operations[-1]["candidate_count"] = selection.candidate_count
             trace.operations[-1]["filtered_count"] = selection.filtered_count
             trace.operations[-1]["selected_target_hash"] = selection.selected_target_hash
@@ -311,6 +405,8 @@ class _RuntimeState:
     allow_candidate: bool
     call_stack: tuple[str, ...]
     episode_state: SkillEpisodeState | None
+    current_episode_target_key: str | None = None
+    current_episode_target: dict[str, Any] | None = None
 
     def consume_operation(self) -> None:
         self.operations_used += 1
@@ -367,12 +463,15 @@ def _select_target(
     if episode_state is not None and episode_store_as is not None:
         episode_key = str(episode_store_as)
         if episode_state.has_target(episode_key):
-            return _TargetSelection(
-                episode_state.target_for(episode_key),
-                candidate_count=0,
-                filtered_count=0,
-                episode_target_reused=True,
-            )
+            if episode_state.target_blocked(episode_key, episode_state.target_for(episode_key)):
+                episode_state.clear_target(episode_key)
+            else:
+                return _TargetSelection(
+                    episode_state.target_for(episode_key),
+                    candidate_count=0,
+                    filtered_count=0,
+                    episode_target_reused=True,
+                )
 
     source = str(node.get("source", "visible_tiles"))
     strategy = str(node.get("strategy", "nearest"))
@@ -390,13 +489,17 @@ def _select_target(
     if not isinstance(candidates, list):
         raise RuntimeStop("target_source_not_list")
     candidate_count = len(candidates)
-    filtered = [_normalize_target(item) for item in candidates if _target_matches(item, node)]
+    agent_pos = _position(context.observation.get("agent_pos"))
+    filtered = [_normalize_target(item, agent_pos=agent_pos) for item in candidates if _target_matches(item, node)]
     if node.get("filters") is not None:
         filtered = [item for item in filtered if _candidate_filters_match(item, node.get("filters"))]
+    if episode_state is not None and episode_store_as is not None:
+        episode_key = str(episode_store_as)
+        filtered = [item for item in filtered if not episode_state.target_blocked(episode_key, item)]
     filtered_count = len(filtered)
     if not filtered:
         if "default" in node:
-            selection = _TargetSelection(_normalize_target(node["default"]), candidate_count, filtered_count)
+            selection = _TargetSelection(_normalize_target(node["default"], agent_pos=agent_pos), candidate_count, filtered_count)
             _record_episode_target(node, episode_state, selection.target)
             return selection
         if source == "route.observed_tiles" or node.get("filters") is not None or node.get("rank_by") is not None:
@@ -409,7 +512,6 @@ def _select_target(
         selection = _TargetSelection(selected, candidate_count, filtered_count)
         _record_episode_target(node, episode_state, selection.target)
         return selection
-    agent_pos = _position(context.observation.get("agent_pos"))
     if strategy == "first":
         selection = _TargetSelection(filtered[0], candidate_count, filtered_count)
         _record_episode_target(node, episode_state, selection.target)
@@ -443,6 +545,12 @@ def _record_episode_target(
     episode_state.record_target(str(node["episode_store_as"]), target)
 
 
+def _target_hash(target: dict[str, Any]) -> str:
+    import hashlib
+
+    return hashlib.sha256(canonical_json(target).encode("utf-8")).hexdigest()
+
+
 def _counts_toward_episode_use(spec: SkillSpec, action: str) -> bool:
     episode_use_actions = spec.budget.get("episode_use_actions")
     if episode_use_actions is None:
@@ -465,7 +573,7 @@ def _target_matches(item: Any, node: dict[str, Any]) -> bool:
     return item.get("pos") is not None
 
 
-def _normalize_target(item: Any) -> dict[str, Any]:
+def _normalize_target(item: Any, *, agent_pos: tuple[int, int] | None = None) -> dict[str, Any]:
     if not isinstance(item, dict):
         raise RuntimeStop("invalid_target")
     pos = _position(item.get("pos"))
@@ -486,6 +594,8 @@ def _normalize_target(item: Any) -> dict[str, Any]:
     if "tile" in target and "tile_type" not in target:
         target["tile_type"] = target["tile"]
     target["pos"] = list(pos)
+    if agent_pos is not None and "distance_from_agent" not in target:
+        target["distance_from_agent"] = _manhattan(agent_pos, pos)
     return target
 
 
@@ -675,10 +785,59 @@ def _skill_key(spec: SkillSpec) -> str:
     return f"{spec.skill_id}@{spec.version}@{spec.spec_hash}"
 
 
+_DEFAULT_MAX_CONSECUTIVE_INTERVENTIONS = 8
+_MOVEMENT_ACTIONS = {"MOVE_UP", "MOVE_DOWN", "MOVE_LEFT", "MOVE_RIGHT"}
+
+
 def _default_action_validator(action: str, context: SkillContext) -> bool:
+    if action in _MOVEMENT_ACTIONS:
+        return _move_is_observably_legal(action, context)
+    if action == "DIG":
+        return _has_adjacent_visible_tile(context, Tile.OBSTACLE)
     if action == "BUILD_ROAD":
         return context.feature_root()["current"].get("tile_type") in {0, 4}
+    if action == "MINE":
+        return (not bool(context.observation.get("has_ore"))) and (
+            context.feature_root()["current"].get("tile_type") == int(Tile.ORE)
+            or _has_adjacent_visible_tile(context, Tile.ORE)
+        )
+    if action == "DROPOFF":
+        return (
+            bool(context.observation.get("has_ore"))
+            and list(context.observation.get("agent_pos", [])) == list(context.observation.get("base_pos", []))
+        )
     return action in ACTION_NAMES
+
+
+def _move_is_observably_legal(action: str, context: SkillContext) -> bool:
+    try:
+        action_id = Action[action]
+    except KeyError:
+        return False
+    delta = MOVE_DELTAS[action_id]
+    agent_pos = _position(context.observation.get("agent_pos"))
+    target = (agent_pos[0] + delta[0], agent_pos[1] + delta[1])
+    tile = _visible_tile(context, target)
+    if tile is None:
+        return True
+    return tile != int(Tile.OBSTACLE)
+
+
+def _has_adjacent_visible_tile(context: SkillContext, tile: Tile) -> bool:
+    agent_pos = _position(context.observation.get("agent_pos"))
+    for delta in MOVE_DELTAS.values():
+        if _visible_tile(context, (agent_pos[0] + delta[0], agent_pos[1] + delta[1])) == int(tile):
+            return True
+    return False
+
+
+def _visible_tile(context: SkillContext, pos: tuple[int, int]) -> int | None:
+    for item in context.observation.get("visible_tiles", []):
+        if tuple(item.get("pos", [])) == pos:
+            tile = item.get("tile", item.get("tile_type"))
+            return None if tile is None else int(tile)
+    return None
+
 
 
 def _context_hash(context: SkillContext) -> str:

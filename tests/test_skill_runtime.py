@@ -85,8 +85,8 @@ class SkillRuntimeTest(unittest.TestCase):
             }
         )
 
-        first = runtime.execute(spec, _context(), episode_state=episode_state)
-        second = runtime.execute(spec, _context(), episode_state=episode_state)
+        first = runtime.execute(spec, _context_at([2, 2]), episode_state=episode_state)
+        second = runtime.execute(spec, _context_at([2, 3]), episode_state=episode_state)
 
         self.assertEqual(first.chosen_action, "BUILD_ROAD")
         self.assertEqual(second.termination, "episode_use_limit_reached")
@@ -104,8 +104,8 @@ class SkillRuntimeTest(unittest.TestCase):
             }
         )
 
-        first = runtime.execute(spec, _context(), episode_state=episode_state)
-        second = runtime.execute(spec, _context(), episode_state=episode_state)
+        first = runtime.execute(spec, _context_at([2, 2]), episode_state=episode_state)
+        second = runtime.execute(spec, _context_at([2, 3]), episode_state=episode_state)
 
         self.assertEqual(first.chosen_action, "BUILD_ROAD")
         self.assertEqual(second.termination, "episode_stop_after_success")
@@ -119,8 +119,8 @@ class SkillRuntimeTest(unittest.TestCase):
         episode_state = SkillEpisodeState()
         runtime = SkillRuntime()
 
-        first = runtime.execute(spec, _context(), episode_state=episode_state)
-        second = runtime.execute(spec, _context(), episode_state=episode_state)
+        first = runtime.execute(spec, _context_at([2, 2]), episode_state=episode_state)
+        second = runtime.execute(spec, _context_at([2, 3]), episode_state=episode_state)
 
         self.assertEqual(first.chosen_action, "MOVE_RIGHT")
         self.assertEqual(second.chosen_action, "MOVE_RIGHT")
@@ -168,6 +168,7 @@ class SkillRuntimeTest(unittest.TestCase):
 
     def test_select_target_filters_and_ranks_route_observed_tiles(self):
         data = _skill_dict(status="verified")
+        data["applicability"] = {"all": [{"feature": "route.exists", "op": "eq", "value": True}]}
         data["procedure"] = [
             {
                 "op": "SELECT_TARGET",
@@ -251,6 +252,30 @@ class SkillRuntimeTest(unittest.TestCase):
         self.assertIsNone(result.variables["target"])
         self.assertEqual(result.trace.operations[0]["candidate_count"], 1)
         self.assertEqual(result.trace.operations[0]["filtered_count"], 0)
+
+    def test_select_target_computes_visible_candidate_distance_from_agent(self):
+        data = _skill_dict(status="verified")
+        data["applicability"] = {"all": [{"feature": "route.exists", "op": "eq", "value": True}]}
+        data["procedure"] = [
+            {
+                "op": "SELECT_TARGET",
+                "source": "visible_tiles",
+                "filters": [
+                    {"feature": "candidate.tile_type", "op": "eq", "value": int(Tile.OBSTACLE)},
+                    {"feature": "candidate.distance_from_agent", "op": "lte", "value": 1},
+                ],
+                "rank_by": [{"feature": "candidate.distance_from_agent", "direction": "asc"}],
+                "select": "first",
+                "store_as": "target",
+            }
+        ]
+        spec = SkillSpec.from_dict(data)
+
+        result = SkillRuntime().execute(spec, _context_with_adjacent_obstacle())
+
+        self.assertEqual(result.termination, "completed_no_action")
+        self.assertEqual(result.variables["target"]["pos"], [2, 3])
+        self.assertEqual(result.variables["target"]["distance_from_agent"], 1)
 
     def test_select_target_can_reuse_episode_locked_target(self):
         data = _skill_dict(status="verified")
@@ -355,6 +380,51 @@ class SkillRuntimeTest(unittest.TestCase):
 
         self.assertEqual(result.termination, "missing_follow_route_max_steps")
 
+    def test_follow_route_rejects_observed_obstacle_move_and_unlocks_target(self):
+        spec = SkillSpec.from_dict(_locked_route_target_skill_dict(status="verified"))
+        episode_state = SkillEpisodeState()
+        context = _context_with_blocked_route_target()
+
+        first = SkillRuntime().execute(spec, context, episode_state=episode_state)
+        second = SkillRuntime().execute(spec, context, episode_state=episode_state)
+
+        self.assertEqual(first.termination, "illegal_action")
+        self.assertEqual(second.termination, "completed_no_action")
+        self.assertIsNone(second.variables["target"])
+        self.assertEqual(second.trace.operations[0]["filtered_count"], 0)
+
+    def test_repeated_movement_without_position_change_detects_no_progress(self):
+        spec = SkillSpec.from_dict(_locked_route_target_skill_dict(status="verified"))
+        episode_state = SkillEpisodeState()
+        runtime = SkillRuntime(action_validator=lambda action, context: True)
+        context = _context_with_blocked_route_target()
+
+        first = runtime.execute(spec, context, episode_state=episode_state)
+        second = runtime.execute(spec, context, episode_state=episode_state)
+        third = runtime.execute(spec, context, episode_state=episode_state)
+
+        self.assertEqual(first.chosen_action, "MOVE_UP")
+        self.assertEqual(second.termination, "no_progress_detected")
+        self.assertEqual(third.termination, "completed_no_action")
+        self.assertIsNone(third.variables["target"])
+
+    def test_consecutive_intervention_limit_blocks_non_counting_actions(self):
+        data = _child_move_skill_dict(status="verified")
+        data["budget"]["episode_use_actions"] = ["BUILD_ROAD"]
+        data["budget"]["max_consecutive_interventions"] = 2
+        spec = SkillSpec.from_dict(data)
+        episode_state = SkillEpisodeState()
+        runtime = SkillRuntime()
+
+        first = runtime.execute(spec, _context_at([2, 2]), episode_state=episode_state)
+        second = runtime.execute(spec, _context_at([2, 3]), episode_state=episode_state)
+        third = runtime.execute(spec, _context_at([2, 4]), episode_state=episode_state)
+
+        self.assertEqual(first.chosen_action, "MOVE_RIGHT")
+        self.assertEqual(second.chosen_action, "MOVE_RIGHT")
+        self.assertEqual(third.termination, "episode_intervention_limit_reached")
+        self.assertIsNone(third.chosen_action)
+
     def test_call_skill_invokes_resolved_child(self):
         child = SkillSpec.from_dict(_child_move_skill_dict(status="verified"))
         parent = SkillSpec.from_dict(_call_skill_dict(status="verified", max_depth=1))
@@ -391,6 +461,21 @@ def _context(terrain_band: str = "ROUGH", tile: int = int(Tile.GROUND)) -> Skill
             "base_pos": [1, 1],
             "has_ore": False,
             "visible_tiles": [{"pos": [2, 2], "tile": tile, "terrain_band": terrain_band}],
+        },
+        info={},
+        memory_summary={"similar_mean_payoff": 0.2, "similar_outcome_count": 3, "visit_count_bucket": "medium"},
+        route_plan={"exists": True, "is_known_transport_route": True, "remaining_length_bucket": "medium"},
+        episode_budget={"steps_remaining": 50},
+    )
+
+
+def _context_at(agent_pos: list[int]) -> SkillContext:
+    return SkillContext.from_observable_inputs(
+        observation={
+            "agent_pos": agent_pos,
+            "base_pos": [1, 1],
+            "has_ore": False,
+            "visible_tiles": [{"pos": agent_pos, "tile": int(Tile.GROUND), "terrain_band": "ROUGH"}],
         },
         info={},
         memory_summary={"similar_mean_payoff": 0.2, "similar_outcome_count": 3, "visit_count_bucket": "medium"},
@@ -475,6 +560,60 @@ def _context_with_route_observed_tiles(observed_tiles: list[dict] | None = None)
             "remaining_length_bucket": "medium",
             "observed_tiles": observed_tiles,
         },
+        episode_budget={"steps_remaining": 20},
+    )
+
+
+def _context_with_blocked_route_target() -> SkillContext:
+    return SkillContext.from_observable_inputs(
+        observation={
+            "agent_pos": [2, 2],
+            "base_pos": [1, 1],
+            "has_ore": True,
+            "visible_tiles": [
+                {"pos": [2, 2], "tile": int(Tile.GROUND), "terrain_band": "ROUGH"},
+                {"pos": [1, 2], "tile": int(Tile.OBSTACLE), "terrain_band": "ROUGH"},
+            ],
+        },
+        info={},
+        memory_summary={"similar_mean_payoff": 0.2, "similar_outcome_count": 3, "visit_count_bucket": "medium"},
+        route_plan={
+            "exists": True,
+            "is_known_transport_route": True,
+            "remaining_length_bucket": "medium",
+            "observed_tiles": [
+                {
+                    "pos": [1, 2],
+                    "tile_type": int(Tile.ROUGH),
+                    "tile_name": "ROUGH",
+                    "terrain_band": "ROUGH",
+                    "has_road": False,
+                    "visit_count_bucket": "medium",
+                    "distance_from_agent": 1,
+                    "route_order": 1,
+                    "source": "observed_memory_route",
+                }
+            ],
+        },
+        episode_budget={"steps_remaining": 20},
+    )
+
+
+def _context_with_adjacent_obstacle() -> SkillContext:
+    return SkillContext.from_observable_inputs(
+        observation={
+            "agent_pos": [2, 2],
+            "base_pos": [1, 1],
+            "has_ore": False,
+            "visible_tiles": [
+                {"pos": [2, 2], "tile": int(Tile.GROUND), "terrain_band": "ROUGH"},
+                {"pos": [2, 3], "tile": int(Tile.OBSTACLE), "terrain_band": "ROUGH"},
+                {"pos": [4, 4], "tile": int(Tile.OBSTACLE), "terrain_band": "ROUGH"},
+            ],
+        },
+        info={},
+        memory_summary={},
+        route_plan={"exists": True},
         episode_budget={"steps_remaining": 20},
     )
 
@@ -571,6 +710,52 @@ def _call_skill_dict(status: str, max_depth: int) -> dict:
                 "max_nested_skill_depth": max_depth,
             },
             "objective": {"primary_metric": "nested_route_progress", "direction": "maximize"},
+        }
+    )
+    return data
+
+
+def _locked_route_target_skill_dict(status: str) -> dict:
+    data = _skill_dict(status)
+    data.update(
+        {
+            "skill_id": "locked_route_target",
+            "name": "Locked route target",
+            "applicability": {"all": [{"feature": "route.exists", "op": "eq", "value": True}]},
+            "procedure": [
+                {
+                    "op": "SELECT_TARGET",
+                    "source": "route.observed_tiles",
+                    "filters": [{"feature": "candidate.has_road", "op": "eq", "value": False}],
+                    "rank_by": [{"feature": "candidate.route_order", "direction": "asc"}],
+                    "select": "first",
+                    "store_as": "target",
+                    "episode_store_as": "dig_or_road_target",
+                },
+                {
+                    "op": "IF",
+                    "condition": {"left": {"var": "target"}, "op": "ne", "right": None},
+                    "then": [
+                        {
+                            "op": "PLAN_ROUTE",
+                            "target": {"var": "target"},
+                            "unknown_cell_policy": "allow",
+                            "max_length": 8,
+                            "store_as": "route",
+                        },
+                        {"op": "FOLLOW_ROUTE", "route_var": "route", "max_steps": 1},
+                    ],
+                    "else": [{"op": "RETURN", "result": "no_target"}],
+                },
+            ],
+            "budget": {
+                "max_runtime_steps": 5,
+                "max_environment_actions": 1,
+                "max_nested_skill_depth": 0,
+                "episode_use_actions": ["BUILD_ROAD"],
+                "max_consecutive_interventions": 8,
+            },
+            "objective": {"primary_metric": "route_progress", "direction": "maximize"},
         }
     )
     return data

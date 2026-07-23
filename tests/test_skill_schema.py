@@ -141,10 +141,12 @@ class SkillSchemaTest(unittest.TestCase):
         data["budget"]["max_uses_per_episode"] = 1
         data["budget"]["stop_after_success"] = True
         data["budget"]["episode_use_actions"] = ["BUILD_ROAD"]
+        data["budget"]["max_consecutive_interventions"] = 2
 
         spec = SkillSpec.from_dict(data)
 
         self.assertEqual(spec.budget["max_uses_per_episode"], 1)
+        self.assertEqual(spec.budget["max_consecutive_interventions"], 2)
 
     def test_episode_use_actions_requires_primitive_action_names(self):
         data = _skill_dict()

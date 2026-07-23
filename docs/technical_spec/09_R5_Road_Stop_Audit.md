@@ -148,3 +148,29 @@ WP-R5-DIG-01 — DIG Skill Learnability Pilot
 - 检查 target lock 是否需要在连续未推进时释放。
 
 这些属于通用 Skill Runtime 安全问题，可服务 DIG、BUILD_ROAD 和后续多步 Skill。
+
+## 8. Runtime Safety 后复核
+
+`WP-RUNTIME-SAFETY-01` 完成后，已复跑 seed `5312` 与 `5300-5319` stop audit。
+
+seed `5312` 的非法动作循环已消除：
+
+| group | road net | reward | ore delivered | builds | road usage | invalid actions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `no_skill` | 0.00 | 76.36 | 8 | 0 | 0 | 0 |
+| `ungated_skill` | 0.70 | 77.07 | 8 | 1 | 16 | 0 |
+| `return_gated_skill` | 0.00 | 76.04 | 8 | 0 | 0 | 0 |
+
+完整 `5300-5319` 复跑后：
+
+| group | builds | positive build episodes | nonpositive build episodes | road net sum | road usage | reward mean | ore mean | invalid actions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `no_skill` | 0 | 0 | 0 | 0.00 | 0 | 30.142 | 3.3 | 0 |
+| `ungated_skill` | 8 | 7 | 1 | 4.05 | 97 | 30.3325 | 3.3 | 0 |
+| `return_gated_skill` | 7 | 7 | 0 | 4.05 | 95 | 30.318 | 3.3 | 0 |
+
+因此，停止结论保持，但理由更精确：
+
+> return gate 不再造成任务安全反例，但它在同种子对照中仍没有优于 ungated road Skill，不能冻结为 development_verified baseline。
+
+下一工作包仍为 `WP-R5-DIG-01`。
